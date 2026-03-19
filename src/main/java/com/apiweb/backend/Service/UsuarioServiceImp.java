@@ -21,7 +21,7 @@ public class UsuarioServiceImp implements IUsuarioService {
     public String registrar(UsuarioModel usuario) {
 
         //validar los campos vacios
-        if (usuario.getEmail() == null || usuario.getPassword() == null) {
+        if (usuario.getCorreo() == null || usuario.getPassword() == null) {
             return "Campos obligatorios vacíos";
         }
 
@@ -31,11 +31,11 @@ public class UsuarioServiceImp implements IUsuarioService {
         }
 
         //correo institucional
-        if (!usuario.getEmail().contains("@") || !usuario.getEmail().contains(".")) {
+        if (!usuario.getCorreo().contains("@") || !usuario.getCorreo().contains(".")) {
             return "Formato de correo inválido";
         }
 
-        if (!usuario.getEmail().endsWith("@uao.edu.co")) {
+        if (!usuario.getCorreo().endsWith("@uao.edu.co")) {
             return "Correo no institucional";
         }
 
@@ -49,7 +49,7 @@ public class UsuarioServiceImp implements IUsuarioService {
         }
 
         //validar si ya existe
-        if (repo.findByEmail(usuario.getEmail()) != null) {
+        if (repo.findByEmail(usuario.getCorreo()) != null) {
             return "Correo ya registrado";
         }
 
@@ -60,7 +60,7 @@ public class UsuarioServiceImp implements IUsuarioService {
         );
 
         //si es secretaria no puede registrarse
-        if (secretarias.contains(usuario.getEmail())) {
+        if (secretarias.contains(usuario.getCorreo())) {
             return "Las secretarias no pueden registrarse.";
         }
 

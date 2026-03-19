@@ -1,7 +1,11 @@
 package com.apiweb.backend.Controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import com.apiweb.backend.Model.UsuarioModel;
 import com.apiweb.backend.Service.IUsuarioService;
@@ -23,6 +27,6 @@ public String registrar(@RequestBody UsuarioModel usuario) {
     // login
     @PostMapping("/login")
 public UsuarioModel login(@RequestBody UsuarioModel usuario) {
-    return usuarioService.login(usuario.getEmail(), usuario.getPassword());
+    return usuarioService.login(usuario.getCorreo(), usuario.getPassword());
 }
 }
