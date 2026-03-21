@@ -22,7 +22,9 @@ public String registrar(@RequestBody UsuarioModel usuario) {
 
     // login
     @PostMapping("/login")
-public UsuarioModel login(@RequestBody UsuarioModel usuario) {
-    return usuarioService.login(usuario.getEmail(), usuario.getPassword());
-}
+    public UsuarioModel login(@RequestParam String email,
+                              @RequestParam String password) {
+        return usuarioService.login(email, password);
+    }
+
 }
