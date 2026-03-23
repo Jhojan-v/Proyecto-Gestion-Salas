@@ -1,69 +1,39 @@
 package com.apiweb.backend.Model;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "usuario")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class UsuarioModel {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    @Column(name = "id_usuario")
+    private Integer idUsuario;
 
-    // correo del usuario (único)
-    @Column(unique = true, nullable = false)
-    private String email;
+    @Column(nullable = false, length = 100)
+    private String nombre;
 
-    // contraseña
-    @Column(nullable = false)
+    @Column(name = "correo", unique = true, nullable = false, length = 150)
+    private String correo;
+
+    @Column(nullable = false, length = 255)
     private String password;
 
-    // facultad del usuario
-    @Column(nullable = false)
-    private String facultad;
-
-    // rol (DOCENTE o SECRETARIA)
+    @Column(name = "rol", nullable = false, length = 20)
     private String rol;
 
-    // ===== GETTERS Y SETTERS =====
-
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public String getFacultad() {
-        return facultad;
-    }
-
-    public void setFacultad(String facultad) {
-        this.facultad = facultad;
-    }
-
-    public String getRol() {
-        return rol;
-    }
-
-    public void setRol(String rol) {
-        this.rol = rol;
-    }
+    @Column(name = "id_facultad", nullable = false)
+    private Integer idFacultad;
 }

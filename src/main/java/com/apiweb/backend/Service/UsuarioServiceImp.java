@@ -1,9 +1,7 @@
 package com.apiweb.backend.Service;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.Set;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.apiweb.backend.Model.UsuarioModel;
@@ -12,82 +10,56 @@ import com.apiweb.backend.Repository.IUsuarioRepository;
 @Service
 public class UsuarioServiceImp implements IUsuarioService {
 
-    //reprositorio para acceder a la base de datos
-    @Autowired
-    private IUsuarioRepository repo;
+    private static final Set<String> CORREOS_SECRETARIA = Set.of(
+            "sec1@uao.edu.co",
+            "sec2@uao.edu.co",
+            "secretaria.ingenieria@uao.edu.co");
 
-    //crear registro de usuario
+    private final IUsuarioRepository repo;
+
+    public UsuarioServiceImp(IUsuarioRepository repo) {
+        this.repo = repo;
+    }
+
     @Override
     public String registrar(UsuarioModel usuario) {
-
-        //validar los campos vacios
-        if (usuario.getEmail() == null || usuario.getPassword() == null) {
-            return "Campos obligatorios vacíos";
+        if (usuario.getNombre() == null || usuario.getNombre().isBlank()
+                || usuario.getCorreo() == null || usuario.getCorreo().isBlank()
+                || usuario.getPassword() == null || usuario.getPassword().isBlank()
+                || usuario.getIdFacultad() == null) {
+            return "Campos obligatorios vacios";
         }
 
-        //validar que no hayan campos vacios en facultad
-        if (usuario.getFacultad() == null || usuario.getFacultad().isEmpty()) {
-            return "la facultad es obligatoria";
-        }
-
-        //correo institucional
-        if (!usuario.getEmail().contains("@") || !usuario.getEmail().contains(".")) {
-            return "Formato de correo inválido";
-        }
-
-        if (!usuario.getEmail().endsWith("@uao.edu.co")) {
+        if (!usuario.getCorreo().endsWith("@uao.edu.co")) {
             return "Correo no institucional";
         }
 
-        //validar contraseña
         String password = usuario.getPassword();
-        if (password.length() < 8 ||
-            !password.matches(".*[A-Z].*") ||
-            !password.matches(".*[^a-zA-Z0-9].*")) {
-
-            return "Contraseña inválida";
+        if (password.length() < 8
+                || !password.matches(".*[A-Z].*")
+                || !password.matches(".*[^a-zA-Z0-9].*")) {
+            return "Contrasena invalida";
         }
 
-        //validar si ya existe
-        if (repo.findByEmail(usuario.getEmail()) != null) {
+        if (repo.findByCorreo(usuario.getCorreo()) != null) {
             return "Correo ya registrado";
         }
 
-        //lista de secretarias
-        List<String> secretarias = Arrays.asList(
-            "sec1@uao.edu.co",
-            "sec2@uao.edu.co"
-        );
-
-        //si es secretaria no puede registrarse
-        if (secretarias.contains(usuario.getEmail())) {
+        if (CORREOS_SECRETARIA.contains(usuario.getCorreo().toLowerCase())) {
             return "Las secretarias no pueden registrarse.";
         }
 
-        //asignar rol automatico
         usuario.setRol("DOCENTE");
-
-        //guardar usuario
         repo.save(usuario);
-
         return "Registro exitoso - Rol: " + usuario.getRol();
     }
 
-    //despues de crear el usuario se hace el login
     @Override
-    public UsuarioModel login(String email, String passwordString) {
-
-        //primero se busca el usuaurio por su coreo
-        UsuarioModel user = repo.findByEmail(email);
-
-        //verifica si existe y si coincide con la contraseña
-        if (user != null && user.getPassword().equals(passwordString)) {
-            return user; //login existoso si se cumple
+    public UsuarioModel login(String correo, String password) {
+        UsuarioModel user = repo.findByCorreo(correo);
+        if (user != null && user.getPassword().equals(password)) {
+            return user;
         }
-
-        //si no se cumple 
         return null;
     }
-
-
 }
