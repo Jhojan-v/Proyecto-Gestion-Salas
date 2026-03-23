@@ -1,28 +1,35 @@
 package com.apiweb.backend.Controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import com.apiweb.backend.Model.UsuarioModel;
 import com.apiweb.backend.Service.IUsuarioService;
 
-@RestController //api
-@RequestMapping("/api/usuarios")//ruta localhost
-@CrossOrigin(origins = "*") // onexión con frontend
+@RestController
+@RequestMapping("/api/usuarios")
+@CrossOrigin(origins = "http://localhost:5173")
 public class UsuarioController {
 
-    @Autowired //conecta con service
-    private IUsuarioService usuarioService;
+    private final IUsuarioService usuarioService;
 
-    // registro d usuario
+    public UsuarioController(IUsuarioService usuarioService) {
+        this.usuarioService = usuarioService;
+    }
+
     @PostMapping("/registrar")
-public String registrar(@RequestBody UsuarioModel usuario) {
-    return usuarioService.registrar(usuario);
-}
+    public String registrar(@RequestBody UsuarioModel usuario) {
+        return usuarioService.registrar(usuario);
+    }
 
-    // login
     @PostMapping("/login")
-public UsuarioModel login(@RequestBody UsuarioModel usuario) {
-    return usuarioService.login(usuario.getEmail(), usuario.getPassword());
-}
+    public UsuarioModel login(
+            @RequestParam String correo,
+            @RequestParam String password) {
+        return usuarioService.login(correo, password);
+    }
 }

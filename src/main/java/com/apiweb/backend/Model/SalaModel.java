@@ -11,29 +11,29 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "usuario")
+@Table(name = "sala")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class UsuarioModel {
+public class SalaModel {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id_usuario")
-    private Integer idUsuario;
+    @Column(name = "id_sala")
+    private Integer idSala;
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "nombre_sala", nullable = false, length = 100)
     private String nombre;
 
-    @Column(name = "correo", unique = true, nullable = false, length = 150)
-    private String correo;
+    @Column(nullable = false, length = 120)
+    private String ubicacion;
 
-    @Column(nullable = false, length = 255)
-    private String password;
-
-    @Column(name = "rol", nullable = false, length = 20)
-    private String rol;
+    @Column(nullable = false)
+    private Integer capacidad;
 
     @Column(name = "id_facultad", nullable = false)
-    private Integer idFacultad;
+    private Integer facultadId;
+
+    @Column(name = "estado", nullable = false)
+    private boolean habilitada = true;
 }
