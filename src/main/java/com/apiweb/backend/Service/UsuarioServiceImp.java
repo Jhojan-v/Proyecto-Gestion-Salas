@@ -1,24 +1,23 @@
 package com.apiweb.backend.Service;
 
-import java.util.Set;
+import java.util.Locale;
 
 import org.springframework.stereotype.Service;
 
+import com.apiweb.backend.Model.ListaBlancaModel;
 import com.apiweb.backend.Model.UsuarioModel;
 import com.apiweb.backend.Repository.IUsuarioRepository;
+import com.apiweb.backend.Repository.ListaBlancaRepository;
 
 @Service
 public class UsuarioServiceImp implements IUsuarioService {
 
-    private static final Set<String> CORREOS_SECRETARIA = Set.of(
-            "sec1@uao.edu.co",
-            "sec2@uao.edu.co",
-            "secretaria.ingenieria@uao.edu.co");
-
     private final IUsuarioRepository repo;
+    private final ListaBlancaRepository listaBlancaRepository;
 
-    public UsuarioServiceImp(IUsuarioRepository repo) {
+    public UsuarioServiceImp(IUsuarioRepository repo, ListaBlancaRepository listaBlancaRepository) {
         this.repo = repo;
+        this.listaBlancaRepository = listaBlancaRepository;
     }
 
     @Override
@@ -30,7 +29,10 @@ public class UsuarioServiceImp implements IUsuarioService {
             return "Campos obligatorios vacios";
         }
 
-        if (!usuario.getCorreo().endsWith("@uao.edu.co")) {
+        String correoNormalizado = usuario.getCorreo().trim().toLowerCase(Locale.ROOT);
+        usuario.setCorreo(correoNormalizado);
+
+        if (!correoNormalizado.endsWith("@uao.edu.co")) {
             return "Correo no institucional";
         }
 
@@ -41,12 +43,19 @@ public class UsuarioServiceImp implements IUsuarioService {
             return "Contrasena invalida";
         }
 
-        if (repo.findByCorreo(usuario.getCorreo()) != null) {
+        if (repo.findByCorreo(correoNormalizado) != null) {
             return "Correo ya registrado";
         }
 
-        if (CORREOS_SECRETARIA.contains(usuario.getCorreo().toLowerCase())) {
-            return "Las secretarias no pueden registrarse.";
+        ListaBlancaModel correoAutorizado = listaBlancaRepository
+                .findByCorreoAutorizadoIgnoreCaseAndActivoTrue(correoNormalizado)
+                .orElse(null);
+
+        if (correoAutorizado != null) {
+            usuario.setRol("SECRETARIA");
+            repo.save(usuario);
+            listaBlancaRepository.delete(correoAutorizado);
+            return "Registro exitoso - Rol: " + usuario.getRol();
         }
 
         usuario.setRol("DOCENTE");
