@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.apiweb.backend.DTO.ActualizarEstadoSalaRequest;
 import com.apiweb.backend.DTO.ActualizarSalaRequest;
 import com.apiweb.backend.DTO.AgregarRecursoRequest;
+import com.apiweb.backend.DTO.CrearSalaRequest;
 import com.apiweb.backend.DTO.EstadoSalaResponse;
 import com.apiweb.backend.DTO.RecursoSalaResponse;
 import com.apiweb.backend.DTO.SalaDetalleResponse;
@@ -50,6 +51,36 @@ public class SalaService {
         this.recursoTecnologicoRepository = recursoTecnologicoRepository;
         this.reservaRepository = reservaRepository;
         this.auditoriaRepository = auditoriaRepository;
+    }
+
+    @Transactional
+    public SalaDetalleResponse crearSala(
+            CrearSalaRequest request,
+            String usuarioId,
+            Integer facultadId,
+            String rolUsuario) {
+        validarAccesoSecretaria(facultadId, rolUsuario);
+        validarUsuario(usuarioId);
+
+        String nombreNormalizado = request.getNombre().trim();
+        if (salaRepository.existsByNombreIgnoreCaseAndFacultadId(nombreNormalizado, facultadId)) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "Ya existe una sala con ese nombre en la facultad");
+        }
+
+        SalaModel sala = new SalaModel();
+        sala.setNombre(nombreNormalizado);
+        sala.setUbicacion(request.getUbicacion().trim());
+        sala.setCapacidad(request.getCapacidad());
+        sala.setFacultadId(facultadId);
+        sala.setHabilitada(true);
+
+        SalaModel guardada = salaRepository.save(sala);
+
+        registrarAuditoria("sala", guardada.getIdSala().longValue(), "CREACION_SALA", usuarioId,
+                "{}", serializarSala(guardada), null);
+
+        return toDetalle(guardada);
     }
 
     @Transactional(readOnly = true)

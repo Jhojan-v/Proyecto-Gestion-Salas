@@ -10,5 +10,7 @@ public interface SalaRepository extends JpaRepository<SalaModel, Integer> {
 
     boolean existsByNombreIgnoreCaseAndFacultadIdAndIdSalaNot(String nombre, Integer facultadId, Integer idSala);
 
+    boolean existsByNombreIgnoreCaseAndFacultadId(String nombre, Integer facultadId);
+
     List<SalaModel> findByFacultadIdOrderByNombreAsc(Integer facultadId);
 }
