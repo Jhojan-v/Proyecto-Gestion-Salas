@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import com.apiweb.backend.DTO.ActualizarEstadoSalaRequest;
 import com.apiweb.backend.DTO.ActualizarSalaRequest;
 import com.apiweb.backend.DTO.AgregarRecursoRequest;
+import com.apiweb.backend.DTO.CrearSalaRequest;
 import com.apiweb.backend.DTO.EstadoSalaResponse;
 import com.apiweb.backend.DTO.RecursoSalaResponse;
 import com.apiweb.backend.DTO.SalaDetalleResponse;
@@ -37,6 +38,17 @@ public class SalaController {
 
     public SalaController(SalaService salaService) {
         this.salaService = salaService;
+    }
+
+    @PostMapping
+    public ResponseEntity<SalaDetalleResponse> crearSala(
+            @Valid @RequestBody CrearSalaRequest request,
+            @RequestHeader("X-Usuario-Id") String usuarioId,
+            @RequestHeader("X-Facultad-Id") Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario) {
+        return new ResponseEntity<>(
+                salaService.crearSala(request, usuarioId, facultadId, rolUsuario),
+                HttpStatus.CREATED);
     }
 
     @GetMapping
