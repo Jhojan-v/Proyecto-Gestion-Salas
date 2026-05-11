@@ -1,5 +1,7 @@
 package com.apiweb.backend.DTO;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -12,6 +14,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CrearSalaRequest {
 
     @NotBlank(message = "El nombre de la sala es obligatorio")
@@ -26,4 +29,9 @@ public class CrearSalaRequest {
     @Min(value = 2, message = "La capacidad debe estar entre 2 y 100")
     @Max(value = 100, message = "La capacidad debe estar entre 2 y 100")
     private Integer capacidad;
+
+    private Integer facultadId;
+
+    @Size(max = 150, message = "La facultad no puede superar 150 caracteres")
+    private String facultad;
 }

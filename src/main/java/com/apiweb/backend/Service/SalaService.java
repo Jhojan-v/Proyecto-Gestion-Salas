@@ -1,7 +1,9 @@
 package com.apiweb.backend.Service;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,8 @@ import com.apiweb.backend.DTO.AgregarRecursoRequest;
 import com.apiweb.backend.DTO.CrearSalaRequest;
 import com.apiweb.backend.DTO.EstadoSalaResponse;
 import com.apiweb.backend.DTO.RecursoSalaResponse;
+import com.apiweb.backend.DTO.RetirarRecursoRequest;
+import com.apiweb.backend.DTO.RetirarRecursoResponse;
 import com.apiweb.backend.DTO.SalaDetalleResponse;
 import com.apiweb.backend.DTO.SalaResumenResponse;
 import com.apiweb.backend.Exception.BusinessException;
@@ -57,11 +61,12 @@ public class SalaService {
     public SalaDetalleResponse crearSala(
             CrearSalaRequest request,
             String usuarioId,
-            Integer facultadId,
+            Integer facultadIdHeader,
             String rolUsuario) {
-        validarAccesoSecretaria(facultadId, rolUsuario);
+        validarRolSecretaria(rolUsuario);
         validarUsuario(usuarioId);
 
+        Integer facultadId = resolverFacultadId(request, facultadIdHeader);
         String nombreNormalizado = request.getNombre().trim();
         if (salaRepository.existsByNombreIgnoreCaseAndFacultadId(nombreNormalizado, facultadId)) {
             throw new BusinessException(HttpStatus.CONFLICT,
@@ -75,18 +80,22 @@ public class SalaService {
         sala.setFacultadId(facultadId);
         sala.setHabilitada(true);
 
-        SalaModel guardada = salaRepository.save(sala);
+        SalaModel creada = salaRepository.save(sala);
+        registrarAuditoria("sala", creada.getIdSala().longValue(), "CREACION_SALA", usuarioId,
+                "{}", serializarSala(creada), "Sala creada correctamente");
 
-        registrarAuditoria("sala", guardada.getIdSala().longValue(), "CREACION_SALA", usuarioId,
-                "{}", serializarSala(guardada), null);
-
-        return toDetalle(guardada);
+        return toDetalle(creada);
     }
 
     @Transactional(readOnly = true)
     public List<SalaResumenResponse> listarSalas(Integer facultadId, String rolUsuario) {
-        validarAccesoSecretaria(facultadId, rolUsuario);
-        return salaRepository.findByFacultadIdOrderByNombreAsc(facultadId)
+        validarFacultadId(facultadId);
+
+        List<SalaModel> salas = esRolSecretaria(rolUsuario)
+                ? salaRepository.findByFacultadIdOrderByNombreAsc(facultadId)
+                : salaRepository.findByFacultadIdAndHabilitadaTrueOrderByNombreAsc(facultadId);
+
+        return salas
                 .stream()
                 .map(this::toResumen)
                 .toList();
@@ -94,8 +103,12 @@ public class SalaService {
 
     @Transactional(readOnly = true)
     public SalaDetalleResponse obtenerDetalle(Integer idSala, Integer facultadId, String rolUsuario) {
-        validarAccesoSecretaria(facultadId, rolUsuario);
+        validarFacultadId(facultadId);
         SalaModel sala = obtenerSalaDeFacultad(idSala, facultadId);
+        if (!esRolSecretaria(rolUsuario) && !sala.isHabilitada()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "Solo puede consultar salas habilitadas de su propia facultad");
+        }
         return toDetalle(sala);
     }
 
@@ -236,13 +249,97 @@ public class SalaService {
                 mensaje);
     }
 
-    private void validarAccesoSecretaria(Integer facultadId, String rolUsuario) {
-        if (facultadId == null) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "El encabezado X-Facultad-Id es obligatorio");
+    @Transactional
+    public RetirarRecursoResponse retirarRecurso(
+            Integer idSala,
+            RetirarRecursoRequest request,
+            String usuarioId,
+            Integer facultadId,
+            String rolUsuario) {
+        validarAccesoSecretaria(facultadId, rolUsuario);
+        validarUsuario(usuarioId);
+
+        SalaModel sala = obtenerSalaDeFacultad(idSala, facultadId);
+        if (!sala.isHabilitada()) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "La sala no esta disponible para retirar recursos porque se encuentra deshabilitada");
         }
-        if (rolUsuario == null || !ROL_SECRETARIA.equalsIgnoreCase(rolUsuario.trim())) {
+
+        String codigo = request.getCodigoRecurso().trim();
+        RecursoSalaModel recursoSala = recursoSalaRepository
+                .findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(idSala, codigo)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "El recurso con codigo '" + codigo + "' no esta asociado a esta sala"));
+
+        return eliminarRecursoSala(recursoSala, usuarioId);
+    }
+
+    @Transactional
+    public RetirarRecursoResponse retirarRecurso(
+            Integer idSala,
+            Integer idRecursoSala,
+            String usuarioId,
+            Integer facultadId,
+            String rolUsuario) {
+        validarAccesoSecretaria(facultadId, rolUsuario);
+        validarUsuario(usuarioId);
+
+        SalaModel sala = obtenerSalaDeFacultad(idSala, facultadId);
+        if (!sala.isHabilitada()) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "La sala no esta disponible para retirar recursos porque se encuentra deshabilitada");
+        }
+
+        RecursoSalaModel recursoSala = recursoSalaRepository.findById(idRecursoSala)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "El recurso asociado a la sala no existe"));
+
+        if (!recursoSala.getSala().getIdSala().equals(idSala)) {
+            throw new RecursoNoEncontradoException(
+                    "El recurso asociado no pertenece a la sala indicada");
+        }
+
+        return eliminarRecursoSala(recursoSala, usuarioId);
+    }
+
+    private RetirarRecursoResponse eliminarRecursoSala(RecursoSalaModel recursoSala, String usuarioId) {
+        Integer idRecursoSalaEliminado = recursoSala.getIdRecursoSala();
+        String codigoRecursoEliminado = recursoSala.getRecurso().getCodigoRecurso();
+        String nombreRecursoEliminado = recursoSala.getRecurso().getNombreRecurso();
+        String datosAnteriores = serializarRecurso(recursoSala);
+
+        recursoSalaRepository.delete(recursoSala);
+        registrarAuditoria("sala_recurso", idRecursoSalaEliminado.longValue(),
+                "RETIRAR_RECURSO_SALA", usuarioId,
+                datosAnteriores, "{}",
+                "Recurso retirado de la sala: " + nombreRecursoEliminado);
+
+        return new RetirarRecursoResponse(
+                idRecursoSalaEliminado,
+                codigoRecursoEliminado,
+                nombreRecursoEliminado,
+                "El recurso fue retirado correctamente de la sala");
+    }
+
+    private void validarAccesoSecretaria(Integer facultadId, String rolUsuario) {
+        validarFacultadId(facultadId);
+        validarRolSecretaria(rolUsuario);
+    }
+
+    private void validarRolSecretaria(String rolUsuario) {
+        if (!esRolSecretaria(rolUsuario)) {
             throw new BusinessException(HttpStatus.FORBIDDEN,
                     "Solo una secretaria autenticada y autorizada puede gestionar salas");
+        }
+    }
+
+    private boolean esRolSecretaria(String rolUsuario) {
+        return rolUsuario != null && ROL_SECRETARIA.equalsIgnoreCase(rolUsuario.trim());
+    }
+
+    private void validarFacultadId(Integer facultadId) {
+        if (facultadId == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "El encabezado X-Facultad-Id es obligatorio");
         }
     }
 
@@ -250,6 +347,30 @@ public class SalaService {
         if (usuarioId == null || usuarioId.isBlank()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "El encabezado X-Usuario-Id es obligatorio");
         }
+    }
+
+    private Integer resolverFacultadId(CrearSalaRequest request, Integer facultadIdHeader) {
+        if (request.getFacultadId() != null) {
+            return request.getFacultadId();
+        }
+
+        if (request.getFacultad() != null && !request.getFacultad().isBlank()) {
+            return switch (normalizarTexto(request.getFacultad())) {
+                case "facultad de ingenieria y ciencias basicas" -> 1;
+                case "facultad de comunicacion social, humanidades y artes" -> 2;
+                case "facultad de arquitectura, urbanismo y diseno" -> 3;
+                case "facultad de administracion" -> 4;
+                default -> throw new BusinessException(HttpStatus.BAD_REQUEST,
+                        "La facultad indicada no es valida");
+            };
+        }
+
+        if (facultadIdHeader != null) {
+            return facultadIdHeader;
+        }
+
+        throw new BusinessException(HttpStatus.BAD_REQUEST,
+                "Debe indicar la facultad por encabezado, id o nombre");
     }
 
     private SalaModel obtenerSalaDeFacultad(Integer idSala, Integer facultadId) {
@@ -346,4 +467,11 @@ public class SalaService {
         return valor == null ? "" : valor.replace("\"", "\\\"");
     }
 
+    private String normalizarTexto(String valor) {
+        return Normalizer.normalize(valor, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replaceAll("\\s+", " ")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+    }
 }

@@ -13,8 +13,8 @@ import java.time.LocalTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -28,7 +28,7 @@ import com.apiweb.backend.Repository.ReservaRepository;
 import com.apiweb.backend.Repository.SalaRepository;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 class SalaControllerIntegrationTest {
 
     @Autowired
@@ -50,6 +50,7 @@ class SalaControllerIntegrationTest {
     private AuditoriaRepository auditoriaRepository;
 
     private SalaModel salaIngenieria;
+    private SalaModel salaDeshabilitada;
     private SalaModel salaOtraFacultad;
 
     @BeforeEach
@@ -62,7 +63,28 @@ class SalaControllerIntegrationTest {
 
         salaIngenieria = salaRepository.save(new SalaModel(null, "Sala Magna", "Bloque A", 20, 10, true));
         salaRepository.save(new SalaModel(null, "Sala Norte", "Bloque B", 12, 10, true));
+        salaDeshabilitada = salaRepository.save(new SalaModel(null, "Sala Sur", "Bloque D", 25, 10, false));
         salaOtraFacultad = salaRepository.save(new SalaModel(null, "Sala Externa", "Bloque C", 15, 99, true));
+    }
+
+    @Test
+    void debeCrearSalaConPayloadDelFrontend() throws Exception {
+        mockMvc.perform(post("/api/salas")
+                        .header("X-Usuario-Id", "1")
+                        .header("X-Rol", "SECRETARIA")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nombre": "Sala UAO 301",
+                                  "ubicacion": "Bloque C, piso 3",
+                                  "capacidad": 18,
+                                  "facultad": "Facultad de Ingenieria y Ciencias Basicas"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nombre").value("Sala UAO 301"))
+                .andExpect(jsonPath("$.facultadId").value(1))
+                .andExpect(jsonPath("$.habilitada").value(true));
     }
 
     @Test
@@ -175,5 +197,26 @@ class SalaControllerIntegrationTest {
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void docenteDebeConsultarSoloSalasHabilitadasDeSuFacultad() throws Exception {
+        mockMvc.perform(get("/api/salas")
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "DOCENTE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].idSala").value(salaIngenieria.getIdSala()))
+                .andExpect(jsonPath("$[0].habilitada").value(true))
+                .andExpect(jsonPath("$[1].nombre").value("Sala Norte"))
+                .andExpect(jsonPath("$[2]").doesNotExist());
+    }
+
+    @Test
+    void docenteNoDebeConsultarDetalleDeSalaDeshabilitada() throws Exception {
+        mockMvc.perform(get("/api/salas/{idSala}", salaDeshabilitada.getIdSala())
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "DOCENTE"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Solo puede consultar salas habilitadas de su propia facultad"));
     }
 }
