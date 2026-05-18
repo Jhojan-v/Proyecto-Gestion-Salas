@@ -65,7 +65,12 @@ public class UsuarioServiceImp implements IUsuarioService {
 
     @Override
     public UsuarioModel login(String correo, String password) {
-        UsuarioModel user = repo.findByCorreo(correo);
+        if (correo == null || correo.isBlank() || password == null || password.isBlank()) {
+            return null;
+        }
+
+        String correoNormalizado = correo.trim().toLowerCase(Locale.ROOT);
+        UsuarioModel user = repo.findByCorreo(correoNormalizado);
         if (user != null && user.getPassword().equals(password)) {
             return user;
         }
