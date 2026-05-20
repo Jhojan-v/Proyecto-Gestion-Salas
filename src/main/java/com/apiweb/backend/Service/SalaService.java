@@ -1,9 +1,13 @@
 package com.apiweb.backend.Service;
 
 import java.text.Normalizer;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,33 +32,46 @@ import com.apiweb.backend.Model.RecursoTecnologicoModel;
 import com.apiweb.backend.Model.ReservaModel;
 import com.apiweb.backend.Model.SalaModel;
 import com.apiweb.backend.Repository.AuditoriaRepository;
+import com.apiweb.backend.Repository.IUsuarioRepository;
 import com.apiweb.backend.Repository.RecursoSalaRepository;
 import com.apiweb.backend.Repository.RecursoTecnologicoRepository;
 import com.apiweb.backend.Repository.ReservaRepository;
 import com.apiweb.backend.Repository.SalaRepository;
+import com.apiweb.backend.Security.UsuarioContext;
 
 @Service
 public class SalaService {
 
     private static final String ROL_SECRETARIA = "SECRETARIA";
+    private static final List<EstadoReserva> ESTADOS_ACTIVOS =
+            List.of(EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE);
 
     private final SalaRepository salaRepository;
     private final RecursoSalaRepository recursoSalaRepository;
     private final RecursoTecnologicoRepository recursoTecnologicoRepository;
     private final ReservaRepository reservaRepository;
     private final AuditoriaRepository auditoriaRepository;
+    private final IUsuarioRepository usuarioRepository;
+    private final NotificacionService notificacionService;
+    private final UsuarioContext usuarioContext;
 
     public SalaService(
             SalaRepository salaRepository,
             RecursoSalaRepository recursoSalaRepository,
             RecursoTecnologicoRepository recursoTecnologicoRepository,
             ReservaRepository reservaRepository,
-            AuditoriaRepository auditoriaRepository) {
+            AuditoriaRepository auditoriaRepository,
+            IUsuarioRepository usuarioRepository,
+            NotificacionService notificacionService,
+            UsuarioContext usuarioContext) {
         this.salaRepository = salaRepository;
         this.recursoSalaRepository = recursoSalaRepository;
         this.recursoTecnologicoRepository = recursoTecnologicoRepository;
         this.reservaRepository = reservaRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.notificacionService = notificacionService;
+        this.usuarioContext = usuarioContext;
     }
 
     @Transactional
@@ -143,6 +160,15 @@ public class SalaService {
         registrarAuditoria("sala", actualizada.getIdSala().longValue(), "EDICION_SALA", usuarioId,
                 datosAnteriores, serializarSala(actualizada), null);
 
+        notificarUsuariosSalaActualizada(
+                actualizada,
+                usuarioId,
+                "SALA_EDITADA",
+                "Sala actualizada: " + actualizada.getNombre(),
+                "La sala '" + actualizada.getNombre()
+                        + "' fue editada. Ubicacion: " + actualizada.getUbicacion()
+                        + ". Capacidad: " + actualizada.getCapacidad() + ".");
+
         return toDetalle(actualizada);
     }
 
@@ -182,6 +208,13 @@ public class SalaService {
         registrarAuditoria("sala", actualizada.getIdSala().longValue(), "CAMBIO_ESTADO_SALA", usuarioId,
                 datosAnteriores, serializarSala(actualizada), mensaje);
 
+        notificarUsuariosSalaActualizada(
+                actualizada,
+                usuarioId,
+                actualizada.isHabilitada() ? "SALA_HABILITADA" : "SALA_DESHABILITADA",
+                "Cambio de estado: " + actualizada.getNombre(),
+                mensaje);
+
         return new EstadoSalaResponse(actualizada.getIdSala(), actualizada.isHabilitada(), mensaje, reservaCanceladaId);
     }
 
@@ -203,50 +236,68 @@ public class SalaService {
 
         String codigo = request.getCodigoRecurso().trim();
         String nombre = request.getNombreRecurso().trim();
+        String descripcion = request.getDescripcion() == null ? null : request.getDescripcion().trim();
 
-        RecursoTecnologicoModel recursoTecnologico = recursoTecnologicoRepository
+        RecursoTecnologicoModel existente = recursoTecnologicoRepository
                 .findByCodigoRecursoIgnoreCase(codigo)
-                .orElseGet(() -> recursoTecnologicoRepository.save(
-                        new RecursoTecnologicoModel(null, codigo, nombre, null, true)));
-
-        if (!nombre.equals(recursoTecnologico.getNombreRecurso())) {
-            recursoTecnologico.setNombreRecurso(nombre);
-            recursoTecnologico = recursoTecnologicoRepository.save(recursoTecnologico);
-        }
-
-        RecursoSalaModel recursoSala = recursoSalaRepository
-                .findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(idSala, codigo)
                 .orElse(null);
 
-        String accion;
-        String datosAnteriores;
-        if (recursoSala == null) {
-            recursoSala = new RecursoSalaModel();
-            recursoSala.setSala(sala);
-            recursoSala.setRecurso(recursoTecnologico);
-            recursoSala.setCantidad(request.getCantidad());
-            accion = "AGREGAR_RECURSO_SALA";
-            datosAnteriores = "{}";
-        } else {
-            datosAnteriores = serializarRecurso(recursoSala);
-            recursoSala.setCantidad(recursoSala.getCantidad() + request.getCantidad());
-            accion = "ACTUALIZAR_CANTIDAD_RECURSO_SALA";
+        if (existente != null) {
+            boolean asignado = recursoSalaRepository
+                    .findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(
+                            existente.getIdRecurso() == null ? -1 : existente.getIdRecurso(), codigo)
+                    .isPresent();
+            boolean asignadoOtraSala = recursoSalaRepository.existsByRecursoCodigoRecursoIgnoreCase(codigo);
+            if (asignado || asignadoOtraSala) {
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "El codigo '" + codigo + "' ya esta asignado a una sala. Cada unidad debe tener un codigo unico");
+            }
         }
 
-        RecursoSalaModel guardado = recursoSalaRepository.save(recursoSala);
-        registrarAuditoria("sala_recurso", guardado.getIdRecursoSala().longValue(), accion, usuarioId,
-                datosAnteriores, serializarRecurso(guardado), null);
+        RecursoTecnologicoModel recursoTecnologico = existente != null
+                ? existente
+                : recursoTecnologicoRepository.save(
+                        new RecursoTecnologicoModel(null, codigo, nombre, descripcion, true));
 
-        String mensaje = accion.equals("AGREGAR_RECURSO_SALA")
-                ? "El recurso fue agregado correctamente a la sala"
-                : "El recurso ya estaba asignado y se actualizo la cantidad";
+        if (existente != null) {
+            boolean cambio = false;
+            if (!nombre.equals(recursoTecnologico.getNombreRecurso())) {
+                recursoTecnologico.setNombreRecurso(nombre);
+                cambio = true;
+            }
+            if (descripcion != null && !descripcion.equals(recursoTecnologico.getDescripcion())) {
+                recursoTecnologico.setDescripcion(descripcion);
+                cambio = true;
+            }
+            if (cambio) {
+                recursoTecnologico = recursoTecnologicoRepository.save(recursoTecnologico);
+            }
+        }
+
+        RecursoSalaModel recursoSala = new RecursoSalaModel();
+        recursoSala.setSala(sala);
+        recursoSala.setRecurso(recursoTecnologico);
+        recursoSala.setCantidad(1);
+
+        RecursoSalaModel guardado = recursoSalaRepository.save(recursoSala);
+        registrarAuditoria("sala_recurso", guardado.getIdRecursoSala().longValue(),
+                "AGREGAR_RECURSO_SALA", usuarioId,
+                "{}", serializarRecurso(guardado),
+                "Recurso registrado como unidad unica con codigo " + codigo);
+
+        notificarUsuariosSalaActualizada(
+                sala,
+                usuarioId,
+                "RECURSO_AGREGADO",
+                "Recurso agregado a sala " + sala.getNombre(),
+                "Se registro el recurso " + nombre + " (codigo " + codigo + ") en la sala " + sala.getNombre());
 
         return new RecursoSalaResponse(
                 guardado.getIdRecursoSala(),
                 guardado.getRecurso().getCodigoRecurso(),
                 guardado.getRecurso().getNombreRecurso(),
                 guardado.getCantidad(),
-                mensaje);
+                "El recurso fue registrado correctamente como unidad unica");
     }
 
     @Transactional
@@ -307,12 +358,21 @@ public class SalaService {
         String codigoRecursoEliminado = recursoSala.getRecurso().getCodigoRecurso();
         String nombreRecursoEliminado = recursoSala.getRecurso().getNombreRecurso();
         String datosAnteriores = serializarRecurso(recursoSala);
+        SalaModel sala = recursoSala.getSala();
 
         recursoSalaRepository.delete(recursoSala);
         registrarAuditoria("sala_recurso", idRecursoSalaEliminado.longValue(),
                 "RETIRAR_RECURSO_SALA", usuarioId,
                 datosAnteriores, "{}",
                 "Recurso retirado de la sala: " + nombreRecursoEliminado);
+
+        notificarUsuariosSalaActualizada(
+                sala,
+                usuarioId,
+                "RECURSO_RETIRADO",
+                "Recurso retirado de sala " + sala.getNombre(),
+                "Se retiro el recurso " + nombreRecursoEliminado
+                        + " (codigo " + codigoRecursoEliminado + ") de la sala " + sala.getNombre());
 
         return new RetirarRecursoResponse(
                 idRecursoSalaEliminado,
@@ -465,6 +525,40 @@ public class SalaService {
 
     private String escapar(String valor) {
         return valor == null ? "" : valor.replace("\"", "\\\"");
+    }
+
+    private void notificarUsuariosSalaActualizada(
+            SalaModel sala,
+            String usuarioHeader,
+            String tipo,
+            String titulo,
+            String mensaje) {
+        Set<Integer> destinatarios = new LinkedHashSet<>();
+        destinatarios.addAll(reservaRepository.buscarUsuariosConReservasActivas(
+                sala.getIdSala(), ESTADOS_ACTIVOS, LocalDate.now()));
+        destinatarios.addAll(usuarioRepository.buscarIdsPorFacultadYRol(
+                sala.getFacultadId(), ROL_SECRETARIA));
+
+        Integer actor = resolverActor(usuarioHeader);
+        if (actor != null) {
+            destinatarios.remove(actor);
+        }
+        if (destinatarios.isEmpty()) {
+            return;
+        }
+        notificacionService.notificar(new ArrayList<>(destinatarios), tipo, titulo, mensaje,
+                "sala", sala.getIdSala().longValue());
+    }
+
+    private Integer resolverActor(String usuarioHeader) {
+        if (usuarioHeader == null || usuarioHeader.isBlank()) {
+            return null;
+        }
+        try {
+            return usuarioContext.resolverIdUsuario(usuarioHeader);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     private String normalizarTexto(String valor) {

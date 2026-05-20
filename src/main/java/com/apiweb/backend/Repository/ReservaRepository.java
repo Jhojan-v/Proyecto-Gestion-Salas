@@ -21,6 +21,24 @@ public interface ReservaRepository extends JpaRepository<ReservaModel, Integer> 
     
     List<ReservaModel> findByIdUsuarioAndEstadoInOrderByFechaDescHoraInicioDesc(
             Integer idUsuario, List<EstadoReserva> estados);
+
+    List<ReservaModel> findByIdUsuarioOrderByFechaDescHoraInicioDesc(Integer idUsuario);
+
+    List<ReservaModel> findBySalaFacultadIdOrderByFechaDescHoraInicioDesc(Integer facultadId);
+
+    List<ReservaModel> findByIdUsuarioAndSalaFacultadIdOrderByFechaDescHoraInicioDesc(
+            Integer idUsuario, Integer facultadId);
+
+    @Query("SELECT r FROM ReservaModel r WHERE r.sala.facultadId = :facultadId " +
+           "AND r.estado IN :estados " +
+           "AND (:fechaInicio IS NULL OR r.fecha >= :fechaInicio) " +
+           "AND (:fechaFin IS NULL OR r.fecha <= :fechaFin) " +
+           "ORDER BY r.sala.nombre ASC, r.fecha DESC, r.horaInicio ASC")
+    List<ReservaModel> buscarReservasParaReporte(
+            @Param("facultadId") Integer facultadId,
+            @Param("estados") List<EstadoReserva> estados,
+            @Param("fechaInicio") LocalDate fechaInicio,
+            @Param("fechaFin") LocalDate fechaFin);
     
     @Query("SELECT r FROM ReservaModel r WHERE r.sala.facultadId = :facultadId AND r.fecha = :fecha AND r.estado IN :estados ORDER BY r.horaInicio ASC")
     List<ReservaModel> findBySalaFacultadIdAndFechaAndEstadoInOrderByHoraInicioAsc(
@@ -43,6 +61,14 @@ public interface ReservaRepository extends JpaRepository<ReservaModel, Integer> 
             @Param("profesorIds") List<Integer> profesorIds);
     
     Optional<ReservaModel> findByIdReservaAndIdUsuario(Integer idReserva, Integer idUsuario);
+
+    @Query("SELECT DISTINCT r.idUsuario FROM ReservaModel r " +
+           "WHERE r.sala.idSala = :idSala AND r.estado IN :estados " +
+           "AND r.fecha >= :fechaDesde")
+    List<Integer> buscarUsuariosConReservasActivas(
+            @Param("idSala") Integer idSala,
+            @Param("estados") List<EstadoReserva> estados,
+            @Param("fechaDesde") LocalDate fechaDesde);
     
     @Query("SELECT r FROM ReservaModel r WHERE r.sala.idSala = :idSala " +
            "AND r.fecha = :fecha AND r.estado IN :estados " +

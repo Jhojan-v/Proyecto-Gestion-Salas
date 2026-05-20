@@ -22,7 +22,7 @@ public class RecursoTecnologicoModel {
     @Column(name = "id_recurso")
     private Integer idRecurso;
 
-    @Column(name = "codigo_recurso", nullable = false, length = 40)
+    @Column(name = "codigo_recurso", nullable = false, length = 40, unique = true)
     private String codigoRecurso;
 
     @Column(name = "nombre_recurso", nullable = false, length = 100)

@@ -3,8 +3,11 @@ package com.apiweb.backend.Service;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +20,11 @@ import com.apiweb.backend.DTO.DisponibilidadSalaResponse;
 import com.apiweb.backend.DTO.HistorialReservaResponse;
 import com.apiweb.backend.DTO.HistorialReservasFacultadResponse;
 import com.apiweb.backend.DTO.HorarioDisponibleResponse;
+import com.apiweb.backend.DTO.ReporteHorasResponse;
+import com.apiweb.backend.DTO.ReporteHorasSalaResponse;
+import com.apiweb.backend.DTO.ReporteUsuarioDetalleResponse;
+import com.apiweb.backend.DTO.ReporteUsuarioResumenResponse;
+import com.apiweb.backend.DTO.ReporteUsuariosResponse;
 import com.apiweb.backend.Exception.BusinessException;
 import com.apiweb.backend.Exception.RecursoNoEncontradoException;
 import com.apiweb.backend.Model.AuditoriaModel;
@@ -40,15 +48,18 @@ public class ReservaService {
     private final SalaRepository salaRepository;
     private final IUsuarioRepository usuarioRepository;
     private final AuditoriaRepository auditoriaRepository;
+    private final NotificacionService notificacionService;
 
     public ReservaService(ReservaRepository reservaRepository,
                           SalaRepository salaRepository,
                           IUsuarioRepository usuarioRepository,
-                          AuditoriaRepository auditoriaRepository) {
+                          AuditoriaRepository auditoriaRepository,
+                          NotificacionService notificacionService) {
         this.reservaRepository = reservaRepository;
         this.salaRepository = salaRepository;
         this.usuarioRepository = usuarioRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.notificacionService = notificacionService;
     }
 
     @Transactional(readOnly = true)
@@ -151,6 +162,16 @@ public class ReservaService {
 
         ReservaModel guardada = reservaRepository.save(nuevaReserva);
 
+        notificarCambioReserva(
+                guardada,
+                idUsuario,
+                "RESERVA_CREADA",
+                "Nueva reserva en " + sala.getNombre(),
+                "Se registro la reserva del " + guardada.getFecha()
+                        + " de " + guardada.getHoraInicio() + " a " + guardada.getHoraFin()
+                        + " en la sala " + sala.getNombre() + ".",
+                "SECRETARIA".equalsIgnoreCase(rolUsuario));
+
         return new CrearReservaResponse(
                 guardada.getIdReserva(),
                 guardada.getSala().getIdSala(),
@@ -173,6 +194,197 @@ public class ReservaService {
         return reservas.stream()
                 .map(this::toCrearReservaResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public HistorialReservasFacultadResponse consultarHistorialDocente(String usuarioId) {
+        Integer idUsuario = resolverUsuarioId(usuarioId);
+        List<ReservaModel> reservas = reservaRepository.findByIdUsuarioOrderByFechaDescHoraInicioDesc(idUsuario);
+        return construirRespuestaHistorial(reservas);
+    }
+
+    @Transactional(readOnly = true)
+    public ReporteHorasResponse generarReporteHoras(
+            Integer facultadId,
+            String rolUsuario,
+            LocalDate fechaInicio,
+            LocalDate fechaFin) {
+        if (!"SECRETARIA".equalsIgnoreCase(rolUsuario)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "Solo una secretaria puede generar el reporte de horas reservadas");
+        }
+        if (facultadId == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "La facultad de la secretaria es obligatoria");
+        }
+        if (fechaInicio != null && fechaFin != null && fechaInicio.isAfter(fechaFin)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "La fecha inicial no puede ser posterior a la fecha final");
+        }
+
+        List<SalaModel> salasFacultad = salaRepository.findByFacultadIdOrderByNombreAsc(facultadId);
+
+        Map<Integer, ReporteHorasSalaResponse> acumulado = new LinkedHashMap<>();
+        for (SalaModel sala : salasFacultad) {
+            acumulado.put(sala.getIdSala(), new ReporteHorasSalaResponse(
+                    sala.getIdSala(),
+                    sala.getNombre(),
+                    sala.getUbicacion(),
+                    sala.getCapacidad(),
+                    0L,
+                    0.0));
+        }
+
+        List<ReservaModel> reservas = reservaRepository.buscarReservasParaReporte(
+                facultadId,
+                List.of(EstadoReserva.CONFIRMADA, EstadoReserva.FINALIZADA, EstadoReserva.PENDIENTE),
+                fechaInicio,
+                fechaFin);
+
+        long totalReservas = 0L;
+        double totalHoras = 0.0;
+        for (ReservaModel reserva : reservas) {
+            double horas = calcularHoras(reserva.getHoraInicio(), reserva.getHoraFin());
+            ReporteHorasSalaResponse acumuladoSala = acumulado.computeIfAbsent(
+                    reserva.getSala().getIdSala(),
+                    id -> new ReporteHorasSalaResponse(
+                            reserva.getSala().getIdSala(),
+                            reserva.getSala().getNombre(),
+                            reserva.getSala().getUbicacion(),
+                            reserva.getSala().getCapacidad(),
+                            0L,
+                            0.0));
+            acumuladoSala.setTotalReservas(acumuladoSala.getTotalReservas() + 1L);
+            acumuladoSala.setTotalHoras(redondear(acumuladoSala.getTotalHoras() + horas));
+            totalReservas++;
+            totalHoras += horas;
+        }
+
+        List<ReporteHorasSalaResponse> salas = acumulado.values().stream()
+                .sorted(Comparator.comparing(ReporteHorasSalaResponse::getNombreSala,
+                        Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                .toList();
+
+        String mensaje = totalReservas == 0
+                ? "No existen reservas registradas para los criterios seleccionados"
+                : "Reporte de horas reservadas generado exitosamente";
+
+        return new ReporteHorasResponse(
+                mensaje,
+                facultadId,
+                fechaInicio,
+                fechaFin,
+                totalReservas,
+                redondear(totalHoras),
+                salas);
+    }
+
+    @Transactional(readOnly = true)
+    public ReporteUsuariosResponse generarReporteUsuarios(
+            Integer facultadId,
+            String rolUsuario,
+            String busqueda) {
+        validarSecretariaReporte(facultadId, rolUsuario);
+
+        String busquedaFiltro = normalizarFiltro(busqueda);
+        List<UsuarioModel> usuarios = busquedaFiltro == null
+                ? usuarioRepository.findByIdFacultadOrderByNombreAsc(facultadId)
+                : usuarioRepository.buscarUsuariosPorFacultad(facultadId, busquedaFiltro);
+
+        Map<Integer, Long> reservasPorUsuario = new LinkedHashMap<>();
+        for (ReservaModel reserva : reservaRepository.findBySalaFacultadIdOrderByFechaDescHoraInicioDesc(facultadId)) {
+            reservasPorUsuario.merge(reserva.getIdUsuario(), 1L, Long::sum);
+        }
+
+        List<ReporteUsuarioResumenResponse> resumen = usuarios.stream()
+                .map(usuario -> new ReporteUsuarioResumenResponse(
+                        usuario.getIdUsuario(),
+                        usuario.getNombre(),
+                        usuario.getCorreo(),
+                        usuario.getRol(),
+                        usuario.getIdFacultad(),
+                        reservasPorUsuario.getOrDefault(usuario.getIdUsuario(), 0L)))
+                .toList();
+
+        long totalReservas = resumen.stream()
+                .mapToLong(ReporteUsuarioResumenResponse::getTotalReservas)
+                .sum();
+
+        String mensaje = resumen.isEmpty()
+                ? "No existen usuarios para los criterios seleccionados"
+                : "Reporte de uso por usuario generado exitosamente";
+
+        return new ReporteUsuariosResponse(
+                mensaje,
+                facultadId,
+                (long) resumen.size(),
+                totalReservas,
+                resumen);
+    }
+
+    @Transactional(readOnly = true)
+    public ReporteUsuarioDetalleResponse generarReporteUsuarioDetalle(
+            Integer idUsuario,
+            Integer facultadId,
+            String rolUsuario) {
+        validarSecretariaReporte(facultadId, rolUsuario);
+
+        UsuarioModel usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+        if (!usuario.getIdFacultad().equals(facultadId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "El usuario no pertenece a la facultad de la secretaria");
+        }
+
+        List<ReservaModel> reservas = reservaRepository
+                .findByIdUsuarioAndSalaFacultadIdOrderByFechaDescHoraInicioDesc(idUsuario, facultadId);
+        long reservasCanceladas = reservas.stream()
+                .filter(reserva -> reserva.getEstado() == EstadoReserva.CANCELADA)
+                .count();
+        long reservasRealizadas = reservas.size() - reservasCanceladas;
+        List<HistorialReservaResponse> historial = reservas.stream()
+                .map(this::toHistorialReservaResponse)
+                .toList();
+
+        String mensaje = reservas.isEmpty()
+                ? "No existen reservas registradas para el usuario seleccionado"
+                : "Reporte de uso del usuario generado exitosamente";
+
+        return new ReporteUsuarioDetalleResponse(
+                mensaje,
+                usuario.getIdUsuario(),
+                usuario.getNombre(),
+                usuario.getCorreo(),
+                usuario.getRol(),
+                usuario.getIdFacultad(),
+                (long) reservas.size(),
+                reservasRealizadas,
+                reservasCanceladas,
+                historial);
+    }
+
+    private void validarSecretariaReporte(Integer facultadId, String rolUsuario) {
+        if (!"SECRETARIA".equalsIgnoreCase(rolUsuario)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "Solo una secretaria puede generar reportes de la facultad");
+        }
+        if (facultadId == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "La facultad de la secretaria es obligatoria");
+        }
+    }
+
+    private double calcularHoras(LocalTime horaInicio, LocalTime horaFin) {
+        if (horaInicio == null || horaFin == null) {
+            return 0.0;
+        }
+        long minutos = java.time.Duration.between(horaInicio, horaFin).toMinutes();
+        if (minutos <= 0) {
+            return 0.0;
+        }
+        return minutos / 60.0;
+    }
+
+    private double redondear(double valor) {
+        return Math.round(valor * 100.0) / 100.0;
     }
 
     @Transactional(readOnly = true)
@@ -235,6 +447,122 @@ public class ReservaService {
     }
 
     @Transactional
+    public CrearReservaResponse editarReserva(
+            Integer idReserva,
+            CrearReservaRequest request,
+            String usuarioId,
+            Integer facultadId,
+            String rolUsuario) {
+        Integer idUsuario = resolverUsuarioId(usuarioId);
+
+        ReservaModel reserva = reservaRepository.findById(idReserva)
+                .orElseThrow(() -> new RecursoNoEncontradoException("La reserva no existe"));
+
+        boolean esSecretaria = "SECRETARIA".equalsIgnoreCase(rolUsuario);
+        boolean esDueno = reserva.getIdUsuario().equals(idUsuario);
+
+        if (!esSecretaria && !esDueno) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "No tiene permiso para editar esta reserva");
+        }
+
+        if (esSecretaria) {
+            UsuarioModel secretaria = usuarioRepository.findById(idUsuario)
+                    .orElseThrow(() -> new RecursoNoEncontradoException("Secretaria no encontrada"));
+            if (!secretaria.getIdFacultad().equals(reserva.getSala().getFacultadId())) {
+                throw new BusinessException(HttpStatus.FORBIDDEN,
+                        "La secretaria no pertenece a la facultad de la sala");
+            }
+        }
+
+        if (reserva.getEstado() == EstadoReserva.CANCELADA || reserva.getEstado() == EstadoReserva.FINALIZADA) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Solo se pueden editar reservas activas");
+        }
+
+        LocalDate fecha = request.resolverFecha();
+        LocalTime horaInicio = request.resolverHoraInicio();
+        LocalTime horaFin = request.resolverHoraFin();
+
+        if (fecha == null || horaInicio == null || horaFin == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "Fecha, hora de inicio y hora de fin son obligatorias para editar la reserva");
+        }
+        if (fecha.isBefore(LocalDate.now())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "La fecha de la reserva debe ser hoy o una fecha futura");
+        }
+        validarHorarioPermitido(horaInicio, horaFin);
+        if (horaFin.isBefore(horaInicio) || horaFin.equals(horaInicio)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "La hora de fin debe ser posterior a la hora de inicio");
+        }
+
+        SalaModel salaDestino = request.getIdSala() != null
+                && !request.getIdSala().equals(reserva.getSala().getIdSala())
+                ? salaRepository.findById(request.getIdSala())
+                        .orElseThrow(() -> new RecursoNoEncontradoException("La sala no existe"))
+                : reserva.getSala();
+
+        if (esSecretaria && !salaDestino.getFacultadId().equals(reserva.getSala().getFacultadId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "La sala destino debe pertenecer a la misma facultad de la reserva");
+        }
+        if (!esSecretaria && !salaDestino.getFacultadId().equals(facultadId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "La sala no pertenece a su facultad");
+        }
+        if (!salaDestino.isHabilitada()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "La sala destino no esta habilitada");
+        }
+
+        List<ReservaModel> solapadas = reservaRepository.findReservasSolapadas(
+                salaDestino.getIdSala(), fecha, ESTADOS_OCUPACION, horaInicio, horaFin);
+        boolean conflicto = solapadas.stream()
+                .anyMatch(otra -> !otra.getIdReserva().equals(reserva.getIdReserva()));
+        if (conflicto) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "La sala ya esta reservada en el horario solicitado");
+        }
+
+        String anterior = "{\"idSala\":" + reserva.getSala().getIdSala()
+                + ",\"fecha\":\"" + reserva.getFecha()
+                + "\",\"horaInicio\":\"" + reserva.getHoraInicio()
+                + "\",\"horaFin\":\"" + reserva.getHoraFin() + "\"}";
+
+        reserva.setSala(salaDestino);
+        reserva.setFecha(fecha);
+        reserva.setHoraInicio(horaInicio);
+        reserva.setHoraFin(horaFin);
+        ReservaModel actualizada = reservaRepository.save(reserva);
+
+        String nuevo = "{\"idSala\":" + actualizada.getSala().getIdSala()
+                + ",\"fecha\":\"" + actualizada.getFecha()
+                + "\",\"horaInicio\":\"" + actualizada.getHoraInicio()
+                + "\",\"horaFin\":\"" + actualizada.getHoraFin() + "\"}";
+        registrarAuditoriaReserva(actualizada.getIdReserva(), "EDICION", idUsuario, usuarioId,
+                anterior, nuevo, "Reserva editada por " + (esSecretaria ? "secretaria" : "usuario"));
+
+        notificarCambioReserva(
+                actualizada,
+                idUsuario,
+                "RESERVA_EDITADA",
+                "Reserva actualizada",
+                "Tu reserva en " + actualizada.getSala().getNombre()
+                        + " quedo programada para el " + actualizada.getFecha()
+                        + " de " + actualizada.getHoraInicio() + " a " + actualizada.getHoraFin() + ".",
+                esSecretaria);
+
+        return new CrearReservaResponse(
+                actualizada.getIdReserva(),
+                actualizada.getSala().getIdSala(),
+                actualizada.getSala().getNombre(),
+                actualizada.getIdUsuario(),
+                actualizada.getFecha(),
+                actualizada.getHoraInicio(),
+                actualizada.getHoraFin(),
+                mapearEstadoParaFrontend(actualizada.getEstado()),
+                "Reserva actualizada exitosamente");
+    }
+
+    @Transactional
     public CancelarReservaResponse cancelarReserva(Integer idReserva, String usuarioId, String rolUsuario) {
         Integer idUsuario = resolverUsuarioId(usuarioId);
 
@@ -277,6 +605,17 @@ public class ReservaService {
 
         String canceladoPor = esSecretaria ? "SECRETARIA" : "USUARIO";
 
+        notificarCambioReserva(
+                reserva,
+                idUsuario,
+                "RESERVA_CANCELADA",
+                "Reserva cancelada",
+                "La reserva en la sala " + reserva.getSala().getNombre()
+                        + " del " + reserva.getFecha()
+                        + " (" + reserva.getHoraInicio() + " - " + reserva.getHoraFin()
+                        + ") fue cancelada por la " + (esSecretaria ? "secretaria" : "persona docente") + ".",
+                esSecretaria);
+
         return new CancelarReservaResponse(
                 reserva.getIdReserva(),
                 reserva.getSala().getIdSala(),
@@ -288,6 +627,51 @@ public class ReservaService {
                 "Reserva cancelada exitosamente",
                 canceladoPor
         );
+    }
+
+    private void registrarAuditoriaReserva(
+            Integer idReserva,
+            String accion,
+            Integer idUsuario,
+            String correoActor,
+            String datosAnteriores,
+            String datosNuevos,
+            String observacion) {
+        AuditoriaModel auditoria = new AuditoriaModel();
+        auditoria.setEntidad("reserva");
+        auditoria.setEntidadId(idReserva.longValue());
+        auditoria.setAccion(accion);
+        auditoria.setUsuarioActor(idUsuario);
+        auditoria.setCorreoActor(correoActor);
+        auditoria.setFechaHora(java.time.LocalDateTime.now());
+        auditoria.setDatosAnteriores(datosAnteriores);
+        auditoria.setDatosNuevos(datosNuevos);
+        auditoria.setObservacion(observacion);
+        auditoriaRepository.save(auditoria);
+    }
+
+    private void notificarCambioReserva(
+            ReservaModel reserva,
+            Integer actorId,
+            String tipo,
+            String titulo,
+            String mensaje,
+            boolean accionPorSecretaria) {
+        List<Integer> destinatarios = new ArrayList<>();
+        if (accionPorSecretaria) {
+            if (reserva.getIdUsuario() != null && !reserva.getIdUsuario().equals(actorId)) {
+                destinatarios.add(reserva.getIdUsuario());
+            }
+        } else {
+            destinatarios.addAll(usuarioRepository.buscarIdsPorFacultadYRol(
+                    reserva.getSala().getFacultadId(), "SECRETARIA"));
+            destinatarios.removeIf(id -> id.equals(actorId));
+        }
+        if (destinatarios.isEmpty()) {
+            return;
+        }
+        notificacionService.notificar(destinatarios, tipo, titulo, mensaje,
+                "reserva", reserva.getIdReserva().longValue());
     }
 
     private Integer resolverUsuarioId(String usuarioId) {

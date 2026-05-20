@@ -77,7 +77,7 @@ function Get-LocalMySqlPort {
     if ($env:LOCAL_MYSQL_PORT) {
         $candidatePorts += [int]$env:LOCAL_MYSQL_PORT
     } else {
-        $candidatePorts += 3307, 3308, 3309, 3310
+        $candidatePorts += 3306, 3307, 3308, 3309
     }
 
     foreach ($port in $candidatePorts) {
@@ -141,12 +141,12 @@ $mysqlReady = Test-MySqlReady -MySqlExe $mysqlClientExe -Port $localMySqlPort
 if (-not $mysqlReady) {
     Start-Process -FilePath $mysqldExe `
         -ArgumentList @(
-            "--basedir=$($mysqlBaseDir.Replace("\", "/"))",
-            "--datadir=$($mysqlDataDir.Replace("\", "/"))",
+            "--basedir=`"$($mysqlBaseDir.Replace('\', '/'))`"",
+            "--datadir=`"$($mysqlDataDir.Replace('\', '/'))`"",
             "--port=$localMySqlPort",
             "--bind-address=127.0.0.1",
             "--mysqlx=0",
-            "--log-error=$($mysqlRunErr.Replace("\", "/"))"
+            "--log-error=`"$($mysqlRunErr.Replace('\', '/'))`""
         ) `
         -WindowStyle Hidden
 
@@ -158,6 +158,7 @@ if (-not $mysqlReady) {
         }
     }
 }
+
 
 if (-not $mysqlReady) {
     throw "MySQL local no quedo disponible en el puerto $localMySqlPort."
@@ -173,7 +174,7 @@ try {
 
 if (-not $backendReady) {
     Start-Process -FilePath "powershell.exe" `
-        -ArgumentList "-NoProfile", "-Command", "& { Set-Location '$projectRoot'; `$env:SPRING_DATASOURCE_URL = '$datasourceUrl'; `$env:SPRING_DATASOURCE_USERNAME = 'root'; `$env:SPRING_DATASOURCE_PASSWORD = ''; .\mvnw.cmd spring-boot:run *> '$backendLog' }" `
+        -ArgumentList "-NoProfile", "-Command", "& { Set-Location `'$projectRoot`'; `$env:SPRING_DATASOURCE_URL = `'$datasourceUrl`'; `$env:SPRING_DATASOURCE_USERNAME = `'root`'; `$env:SPRING_DATASOURCE_PASSWORD = `'`'; .\mvnw.cmd spring-boot:run *> `'$backendLog`' }" `
         -WindowStyle Hidden
 
     for ($i = 0; $i -lt 30; $i++) {

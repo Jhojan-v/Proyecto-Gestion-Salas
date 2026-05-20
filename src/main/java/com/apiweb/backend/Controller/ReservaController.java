@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +24,9 @@ import com.apiweb.backend.DTO.CrearReservaRequest;
 import com.apiweb.backend.DTO.CrearReservaResponse;
 import com.apiweb.backend.DTO.DisponibilidadSalaResponse;
 import com.apiweb.backend.DTO.HistorialReservasFacultadResponse;
+import com.apiweb.backend.DTO.ReporteHorasResponse;
+import com.apiweb.backend.DTO.ReporteUsuarioDetalleResponse;
+import com.apiweb.backend.DTO.ReporteUsuariosResponse;
 import com.apiweb.backend.Service.ReservaService;
 
 import jakarta.validation.Valid;
@@ -73,6 +77,37 @@ public class ReservaController {
         return ResponseEntity.ok(reservaService.listarReservasUsuario(usuarioId));
     }
 
+    @GetMapping("/mi-historial")
+    public ResponseEntity<HistorialReservasFacultadResponse> consultarMiHistorial(
+            @RequestHeader("X-Usuario-Id") String usuarioId) {
+        return ResponseEntity.ok(reservaService.consultarHistorialDocente(usuarioId));
+    }
+
+    @GetMapping("/reporte/horas")
+    public ResponseEntity<ReporteHorasResponse> generarReporteHoras(
+            @RequestHeader("X-Facultad-Id") Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaInicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin) {
+        return ResponseEntity.ok(reservaService.generarReporteHoras(facultadId, rolUsuario, fechaInicio, fechaFin));
+    }
+
+    @GetMapping("/reporte/usuarios")
+    public ResponseEntity<ReporteUsuariosResponse> generarReporteUsuarios(
+            @RequestHeader("X-Facultad-Id") Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario,
+            @RequestParam(required = false) String busqueda) {
+        return ResponseEntity.ok(reservaService.generarReporteUsuarios(facultadId, rolUsuario, busqueda));
+    }
+
+    @GetMapping("/reporte/usuarios/{idUsuario}")
+    public ResponseEntity<ReporteUsuarioDetalleResponse> generarReporteUsuarioDetalle(
+            @PathVariable Integer idUsuario,
+            @RequestHeader("X-Facultad-Id") Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario) {
+        return ResponseEntity.ok(reservaService.generarReporteUsuarioDetalle(idUsuario, facultadId, rolUsuario));
+    }
+
     @GetMapping("/historial/facultad")
     public ResponseEntity<HistorialReservasFacultadResponse> consultarHistorialFacultad(
             @RequestHeader("X-Facultad-Id") Integer facultadId,
@@ -92,6 +127,17 @@ public class ReservaController {
             @RequestHeader("X-Facultad-Id") Integer facultadId,
             @RequestHeader("X-Rol") String rolUsuario) {
         return ResponseEntity.ok(reservaService.listarReservasFacultad(fecha, facultadId, rolUsuario));
+    }
+
+    @PutMapping("/{idReserva}")
+    public ResponseEntity<CrearReservaResponse> editarReserva(
+            @PathVariable Integer idReserva,
+            @RequestBody CrearReservaRequest request,
+            @RequestHeader("X-Usuario-Id") String usuarioId,
+            @RequestHeader(value = "X-Facultad-Id", required = false) Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario) {
+        return ResponseEntity.ok(
+                reservaService.editarReserva(idReserva, request, usuarioId, facultadId, rolUsuario));
     }
 
     @DeleteMapping("/{idReserva}")

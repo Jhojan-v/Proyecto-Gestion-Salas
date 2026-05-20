@@ -337,4 +337,63 @@ class ReservaIntegrationTest {
                 .andExpect(jsonPath("$.historial[0].fecha").value(fechaManana.toString()))
                 .andExpect(jsonPath("$.historial[1].fecha").value(ayer.toString()));
     }
+
+    @Test
+    void secretariaDebeGenerarListadoDeReportePorUsuario() throws Exception {
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, Integer.valueOf(docenteId), fechaManana.minusDays(2),
+                LocalTime.of(8, 0), LocalTime.of(9, 0), EstadoReserva.FINALIZADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana.minusDays(1),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), EstadoReserva.CANCELADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana,
+                LocalTime.of(14, 0), LocalTime.of(15, 0), EstadoReserva.CONFIRMADA));
+
+        mockMvc.perform(get("/api/reservas/reporte/usuarios")
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "SECRETARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensaje").value("Reporte de uso por usuario generado exitosamente"))
+                .andExpect(jsonPath("$.totalUsuarios").value(3))
+                .andExpect(jsonPath("$.totalReservas").value(3))
+                .andExpect(jsonPath("$.usuarios[0].nombreUsuario").value("Docente"))
+                .andExpect(jsonPath("$.usuarios[0].totalReservas").value(1))
+                .andExpect(jsonPath("$.usuarios[1].nombreUsuario").value("Docente Dos"))
+                .andExpect(jsonPath("$.usuarios[1].totalReservas").value(2));
+    }
+
+    @Test
+    void secretariaDebeGenerarDetalleDeReportePorUsuario() throws Exception {
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana.minusDays(1),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), EstadoReserva.CANCELADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana,
+                LocalTime.of(14, 0), LocalTime.of(15, 0), EstadoReserva.CONFIRMADA));
+
+        mockMvc.perform(get("/api/reservas/reporte/usuarios/{idUsuario}", otroUsuarioId)
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "SECRETARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensaje").value("Reporte de uso del usuario generado exitosamente"))
+                .andExpect(jsonPath("$.nombreUsuario").value("Docente Dos"))
+                .andExpect(jsonPath("$.totalReservas").value(2))
+                .andExpect(jsonPath("$.reservasRealizadas").value(1))
+                .andExpect(jsonPath("$.reservasCanceladas").value(1))
+                .andExpect(jsonPath("$.reservas.length()").value(2))
+                .andExpect(jsonPath("$.reservas[0].nombreSala").value("Sala Magna"))
+                .andExpect(jsonPath("$.reservas[0].fecha").value(fechaManana.toString()));
+    }
+
+    @Test
+    void secretariaDebeFiltrarReportePorUsuarioConBusqueda() throws Exception {
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana,
+                LocalTime.of(10, 0), LocalTime.of(11, 0), EstadoReserva.CONFIRMADA));
+
+        mockMvc.perform(get("/api/reservas/reporte/usuarios")
+                        .param("busqueda", "docente2")
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "SECRETARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalUsuarios").value(1))
+                .andExpect(jsonPath("$.totalReservas").value(1))
+                .andExpect(jsonPath("$.usuarios[0].nombreUsuario").value("Docente Dos"))
+                .andExpect(jsonPath("$.usuarios[0].correoUsuario").value("docente2.test@uao.edu.co"));
+    }
 }
