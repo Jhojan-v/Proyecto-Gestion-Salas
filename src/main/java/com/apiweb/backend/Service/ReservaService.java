@@ -22,6 +22,8 @@ import com.apiweb.backend.DTO.HistorialReservasFacultadResponse;
 import com.apiweb.backend.DTO.HorarioDisponibleResponse;
 import com.apiweb.backend.DTO.ReporteHorasResponse;
 import com.apiweb.backend.DTO.ReporteHorasSalaResponse;
+import com.apiweb.backend.DTO.ReporteReservasResponse;
+import com.apiweb.backend.DTO.ReporteReservasSalaResponse;
 import com.apiweb.backend.DTO.ReporteUsuarioDetalleResponse;
 import com.apiweb.backend.DTO.ReporteUsuarioResumenResponse;
 import com.apiweb.backend.DTO.ReporteUsuariosResponse;
@@ -201,6 +203,67 @@ public class ReservaService {
         Integer idUsuario = resolverUsuarioId(usuarioId);
         List<ReservaModel> reservas = reservaRepository.findByIdUsuarioOrderByFechaDescHoraInicioDesc(idUsuario);
         return construirRespuestaHistorial(reservas);
+    }
+
+    @Transactional(readOnly = true)
+    public ReporteReservasResponse generarReporteReservas(
+            Integer facultadId,
+            String rolUsuario,
+            LocalDate fechaInicio,
+            LocalDate fechaFin) {
+        validarSecretariaReporte(facultadId, rolUsuario);
+        if (fechaInicio != null && fechaFin != null && fechaInicio.isAfter(fechaFin)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "La fecha inicial no puede ser posterior a la fecha final");
+        }
+
+        List<SalaModel> salasFacultad = salaRepository.findByFacultadIdOrderByNombreAsc(facultadId);
+        Map<Integer, ReporteReservasSalaResponse> acumulado = new LinkedHashMap<>();
+        for (SalaModel sala : salasFacultad) {
+            acumulado.put(sala.getIdSala(), new ReporteReservasSalaResponse(
+                    sala.getIdSala(),
+                    sala.getNombre(),
+                    sala.getUbicacion(),
+                    sala.getCapacidad(),
+                    0L));
+        }
+
+        List<ReservaModel> reservas = reservaRepository.buscarReservasParaReporte(
+                facultadId,
+                List.of(EstadoReserva.CONFIRMADA, EstadoReserva.FINALIZADA, EstadoReserva.PENDIENTE),
+                fechaInicio,
+                fechaFin);
+
+        long totalReservas = 0L;
+        for (ReservaModel reserva : reservas) {
+            ReporteReservasSalaResponse salaReporte = acumulado.computeIfAbsent(
+                    reserva.getSala().getIdSala(),
+                    id -> new ReporteReservasSalaResponse(
+                            reserva.getSala().getIdSala(),
+                            reserva.getSala().getNombre(),
+                            reserva.getSala().getUbicacion(),
+                            reserva.getSala().getCapacidad(),
+                            0L));
+            salaReporte.setTotalReservas(salaReporte.getTotalReservas() + 1L);
+            totalReservas++;
+        }
+
+        List<ReporteReservasSalaResponse> salas = acumulado.values().stream()
+                .sorted(Comparator.comparing(ReporteReservasSalaResponse::getNombreSala,
+                        Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                .toList();
+
+        String mensaje = totalReservas == 0
+                ? "No existen reservas registradas para los criterios seleccionados"
+                : "Reporte de uso por numero de reservas generado exitosamente";
+
+        return new ReporteReservasResponse(
+                mensaje,
+                facultadId,
+                fechaInicio,
+                fechaFin,
+                totalReservas,
+                salas);
     }
 
     @Transactional(readOnly = true)

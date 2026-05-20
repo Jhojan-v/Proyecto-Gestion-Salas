@@ -24,6 +24,7 @@ import com.apiweb.backend.DTO.CrearReservaRequest;
 import com.apiweb.backend.DTO.CrearReservaResponse;
 import com.apiweb.backend.DTO.DisponibilidadSalaResponse;
 import com.apiweb.backend.DTO.HistorialReservasFacultadResponse;
+import com.apiweb.backend.DTO.ReporteReservasResponse;
 import com.apiweb.backend.DTO.ReporteHorasResponse;
 import com.apiweb.backend.DTO.ReporteUsuarioDetalleResponse;
 import com.apiweb.backend.DTO.ReporteUsuariosResponse;
@@ -81,6 +82,15 @@ public class ReservaController {
     public ResponseEntity<HistorialReservasFacultadResponse> consultarMiHistorial(
             @RequestHeader("X-Usuario-Id") String usuarioId) {
         return ResponseEntity.ok(reservaService.consultarHistorialDocente(usuarioId));
+    }
+
+    @GetMapping("/reporte/reservas")
+    public ResponseEntity<ReporteReservasResponse> generarReporteReservas(
+            @RequestHeader("X-Facultad-Id") Integer facultadId,
+            @RequestHeader("X-Rol") String rolUsuario,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaInicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin) {
+        return ResponseEntity.ok(reservaService.generarReporteReservas(facultadId, rolUsuario, fechaInicio, fechaFin));
     }
 
     @GetMapping("/reporte/horas")

@@ -339,6 +339,54 @@ class ReservaIntegrationTest {
     }
 
     @Test
+    void secretariaDebeGenerarReportePorNumeroDeReservas() throws Exception {
+        SalaModel salaAuditorio = salaRepository.save(new SalaModel(null, "Auditorio Central", "Bloque B", 80, 10, true));
+
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, Integer.valueOf(docenteId), fechaManana.minusDays(2),
+                LocalTime.of(8, 0), LocalTime.of(9, 0), EstadoReserva.FINALIZADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana.minusDays(1),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), EstadoReserva.CONFIRMADA));
+        reservaRepository.save(new ReservaModel(null, salaAuditorio, otroUsuarioId, fechaManana,
+                LocalTime.of(14, 0), LocalTime.of(15, 0), EstadoReserva.PENDIENTE));
+
+        mockMvc.perform(get("/api/reservas/reporte/reservas")
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "SECRETARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensaje").value("Reporte de uso por numero de reservas generado exitosamente"))
+                .andExpect(jsonPath("$.totalReservas").value(3))
+                .andExpect(jsonPath("$.salas[0].nombreSala").value("Auditorio Central"))
+                .andExpect(jsonPath("$.salas[0].totalReservas").value(1))
+                .andExpect(jsonPath("$.salas[1].nombreSala").value("Sala Magna"))
+                .andExpect(jsonPath("$.salas[1].totalReservas").value(2));
+    }
+
+    @Test
+    void secretariaDebeFiltrarReportePorNumeroDeReservasPorRango() throws Exception {
+        LocalDate ayer = fechaManana.minusDays(1);
+        LocalDate pasadoManana = fechaManana.plusDays(1);
+
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, Integer.valueOf(docenteId), ayer,
+                LocalTime.of(8, 0), LocalTime.of(9, 0), EstadoReserva.FINALIZADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, fechaManana,
+                LocalTime.of(10, 0), LocalTime.of(11, 0), EstadoReserva.CONFIRMADA));
+        reservaRepository.save(new ReservaModel(null, salaIngenieria, otroUsuarioId, pasadoManana,
+                LocalTime.of(14, 0), LocalTime.of(15, 0), EstadoReserva.PENDIENTE));
+
+        mockMvc.perform(get("/api/reservas/reporte/reservas")
+                        .param("fechaInicio", ayer.toString())
+                        .param("fechaFin", fechaManana.toString())
+                        .header("X-Facultad-Id", 10)
+                        .header("X-Rol", "SECRETARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalReservas").value(2))
+                .andExpect(jsonPath("$.fechaInicio").value(ayer.toString()))
+                .andExpect(jsonPath("$.fechaFin").value(fechaManana.toString()))
+                .andExpect(jsonPath("$.salas[0].nombreSala").value("Sala Magna"))
+                .andExpect(jsonPath("$.salas[0].totalReservas").value(2));
+    }
+
+    @Test
     void secretariaDebeGenerarListadoDeReportePorUsuario() throws Exception {
         reservaRepository.save(new ReservaModel(null, salaIngenieria, Integer.valueOf(docenteId), fechaManana.minusDays(2),
                 LocalTime.of(8, 0), LocalTime.of(9, 0), EstadoReserva.FINALIZADA));

@@ -236,54 +236,54 @@ public class SalaService {
 
         String codigo = request.getCodigoRecurso().trim();
         String nombre = request.getNombreRecurso().trim();
+        Integer cantidadSolicitada = request.getCantidad();
         String descripcion = request.getDescripcion() == null ? null : request.getDescripcion().trim();
 
-        RecursoTecnologicoModel existente = recursoTecnologicoRepository
+        RecursoTecnologicoModel recursoTecnologico = recursoTecnologicoRepository
                 .findByCodigoRecursoIgnoreCase(codigo)
+                .orElseGet(() -> recursoTecnologicoRepository.save(
+                        new RecursoTecnologicoModel(null, codigo, nombre, descripcion, true)));
+
+        boolean cambio = false;
+        if (!nombre.equals(recursoTecnologico.getNombreRecurso())) {
+            recursoTecnologico.setNombreRecurso(nombre);
+            cambio = true;
+        }
+        if (descripcion != null && !descripcion.equals(recursoTecnologico.getDescripcion())) {
+            recursoTecnologico.setDescripcion(descripcion);
+            cambio = true;
+        }
+        if (cambio) {
+            recursoTecnologico = recursoTecnologicoRepository.save(recursoTecnologico);
+        }
+
+        RecursoSalaModel recursoSala = recursoSalaRepository
+                .findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(idSala, codigo)
                 .orElse(null);
 
-        if (existente != null) {
-            boolean asignado = recursoSalaRepository
-                    .findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(
-                            existente.getIdRecurso() == null ? -1 : existente.getIdRecurso(), codigo)
-                    .isPresent();
-            boolean asignadoOtraSala = recursoSalaRepository.existsByRecursoCodigoRecursoIgnoreCase(codigo);
-            if (asignado || asignadoOtraSala) {
-                throw new BusinessException(HttpStatus.CONFLICT,
-                        "El codigo '" + codigo + "' ya esta asignado a una sala. Cada unidad debe tener un codigo unico");
-            }
+        String accion;
+        String datosAnteriores;
+        String mensaje;
+        if (recursoSala == null) {
+            recursoSala = new RecursoSalaModel();
+            recursoSala.setSala(sala);
+            recursoSala.setRecurso(recursoTecnologico);
+            recursoSala.setCantidad(cantidadSolicitada);
+            accion = "AGREGAR_RECURSO_SALA";
+            datosAnteriores = "{}";
+            mensaje = "El recurso fue agregado correctamente a la sala";
+        } else {
+            datosAnteriores = serializarRecurso(recursoSala);
+            recursoSala.setCantidad(recursoSala.getCantidad() + cantidadSolicitada);
+            accion = "ACTUALIZAR_CANTIDAD_RECURSO_SALA";
+            mensaje = "El recurso ya estaba asignado y se actualizo la cantidad";
         }
-
-        RecursoTecnologicoModel recursoTecnologico = existente != null
-                ? existente
-                : recursoTecnologicoRepository.save(
-                        new RecursoTecnologicoModel(null, codigo, nombre, descripcion, true));
-
-        if (existente != null) {
-            boolean cambio = false;
-            if (!nombre.equals(recursoTecnologico.getNombreRecurso())) {
-                recursoTecnologico.setNombreRecurso(nombre);
-                cambio = true;
-            }
-            if (descripcion != null && !descripcion.equals(recursoTecnologico.getDescripcion())) {
-                recursoTecnologico.setDescripcion(descripcion);
-                cambio = true;
-            }
-            if (cambio) {
-                recursoTecnologico = recursoTecnologicoRepository.save(recursoTecnologico);
-            }
-        }
-
-        RecursoSalaModel recursoSala = new RecursoSalaModel();
-        recursoSala.setSala(sala);
-        recursoSala.setRecurso(recursoTecnologico);
-        recursoSala.setCantidad(1);
 
         RecursoSalaModel guardado = recursoSalaRepository.save(recursoSala);
         registrarAuditoria("sala_recurso", guardado.getIdRecursoSala().longValue(),
-                "AGREGAR_RECURSO_SALA", usuarioId,
-                "{}", serializarRecurso(guardado),
-                "Recurso registrado como unidad unica con codigo " + codigo);
+                accion, usuarioId,
+                datosAnteriores, serializarRecurso(guardado),
+                mensaje);
 
         notificarUsuariosSalaActualizada(
                 sala,
@@ -297,7 +297,7 @@ public class SalaService {
                 guardado.getRecurso().getCodigoRecurso(),
                 guardado.getRecurso().getNombreRecurso(),
                 guardado.getCantidad(),
-                "El recurso fue registrado correctamente como unidad unica");
+                mensaje);
     }
 
     @Transactional
