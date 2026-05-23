@@ -12,4 +12,6 @@ public interface RecursoSalaRepository extends JpaRepository<RecursoSalaModel, I
     List<RecursoSalaModel> findBySalaIdSalaOrderByRecursoNombreRecursoAsc(Integer idSala);
 
     Optional<RecursoSalaModel> findBySalaIdSalaAndRecursoCodigoRecursoIgnoreCase(Integer idSala, String codigoRecurso);
+
+    boolean existsByRecursoCodigoRecursoIgnoreCase(String codigoRecurso);
 }

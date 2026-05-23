@@ -21,7 +21,10 @@ public class AgregarRecursoRequest {
     @Size(max = 100, message = "El nombre del recurso no puede superar 100 caracteres")
     private String nombreRecurso;
 
-    @NotNull(message = "La cantidad es obligatoria")
-    @Min(value = 1, message = "La cantidad minima debe ser 1")
+    @NotNull(message = "La cantidad del recurso es obligatoria")
+    @Min(value = 1, message = "La cantidad del recurso debe ser mayor o igual a 1")
     private Integer cantidad;
+
+    @Size(max = 255, message = "La descripcion no puede superar 255 caracteres")
+    private String descripcion;
 }
