@@ -48,9 +48,11 @@ class UsuarioControllerIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.correo").value("secretaria.ingenieria@uao.edu.co"))
-                .andExpect(jsonPath("$.rol").value("SECRETARIA"))
-                .andExpect(jsonPath("$.password").doesNotExist());
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.tipo").value("Bearer"))
+                .andExpect(jsonPath("$.usuario.correo").value("secretaria.ingenieria@uao.edu.co"))
+                .andExpect(jsonPath("$.usuario.rol").value("SECRETARIA"))
+                .andExpect(jsonPath("$.usuario.password").doesNotExist());
     }
 
     @Test
@@ -64,16 +66,16 @@ class UsuarioControllerIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.correo").value("secretaria.ingenieria@uao.edu.co"));
+                .andExpect(jsonPath("$.usuario.correo").value("secretaria.ingenieria@uao.edu.co"));
     }
 
     @Test
     void debePermitirLoginConRequestParamsPorCompatibilidad() throws Exception {
         mockMvc.perform(post("/api/usuarios/login")
-                        .param("correo", "secretaria.ingenieria@uao.edu.co")
+                .param("correo", "secretaria.ingenieria@uao.edu.co")
                         .param("password", "ClaveSegura1!"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.rol").value("SECRETARIA"));
+                .andExpect(jsonPath("$.usuario.rol").value("SECRETARIA"));
     }
 
     @Test

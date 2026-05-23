@@ -48,4 +48,25 @@ public class ReservaModel {
     @Enumerated(EnumType.STRING)
     @Column(name = "estado_reserva", nullable = false, length = 20)
     private EstadoReserva estado;
+
+    @Column(nullable = false, length = 255)
+    private String motivo = "Reserva creada por el usuario";
+
+    public ReservaModel(
+            Integer idReserva,
+            SalaModel sala,
+            Integer idUsuario,
+            LocalDate fecha,
+            LocalTime horaInicio,
+            LocalTime horaFin,
+            EstadoReserva estado) {
+        this.idReserva = idReserva;
+        this.sala = sala;
+        this.idUsuario = idUsuario;
+        this.fecha = fecha;
+        this.horaInicio = horaInicio;
+        this.horaFin = horaFin;
+        this.estado = estado;
+        this.motivo = "Reserva creada por el usuario";
+    }
 }

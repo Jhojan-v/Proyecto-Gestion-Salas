@@ -15,7 +15,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.apiweb.backend.Model.RecursoSalaModel;
 import com.apiweb.backend.Model.RecursoTecnologicoModel;
 import com.apiweb.backend.Model.SalaModel;
+import com.apiweb.backend.Model.UsuarioModel;
 import com.apiweb.backend.Repository.AuditoriaRepository;
+import com.apiweb.backend.Repository.IUsuarioRepository;
 import com.apiweb.backend.Repository.RecursoSalaRepository;
 import com.apiweb.backend.Repository.RecursoTecnologicoRepository;
 import com.apiweb.backend.Repository.ReservaRepository;
@@ -43,8 +45,12 @@ class RetirarRecursoIntegrationTest {
     @Autowired
     private AuditoriaRepository auditoriaRepository;
 
+    @Autowired
+    private IUsuarioRepository usuarioRepository;
+
     private SalaModel salaIngenieria;
     private RecursoSalaModel recursoAsignado;
+    private String secretariaId;
 
     @BeforeEach
     void setUp() {
@@ -53,6 +59,11 @@ class RetirarRecursoIntegrationTest {
         reservaRepository.deleteAll();
         auditoriaRepository.deleteAll();
         salaRepository.deleteAll();
+        usuarioRepository.deleteAll();
+
+        UsuarioModel secretaria = usuarioRepository.save(
+                new UsuarioModel(null, "Secretaria Recursos", "secretaria.recursos@uao.edu.co", "ClaveSegura1!", "SECRETARIA", 10));
+        secretariaId = String.valueOf(secretaria.getIdUsuario());
 
         salaIngenieria = salaRepository.save(new SalaModel(null, "Sala Magna", "Bloque A", 20, 10, true));
 
@@ -66,7 +77,7 @@ class RetirarRecursoIntegrationTest {
     @Test
     void debeRetirarRecursoCorrectamente() throws Exception {
         mockMvc.perform(delete("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -84,7 +95,7 @@ class RetirarRecursoIntegrationTest {
     void debeRetirarRecursoPorIdComoLoHaceElFrontend() throws Exception {
         mockMvc.perform(delete("/api/salas/{idSala}/recursos/{idRecursoSala}",
                         salaIngenieria.getIdSala(), recursoAsignado.getIdRecursoSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA"))
                 .andExpect(status().isOk())
@@ -95,7 +106,7 @@ class RetirarRecursoIntegrationTest {
     @Test
     void debeRechazarRetiroDeRecursoInexistente() throws Exception {
         mockMvc.perform(delete("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -114,7 +125,7 @@ class RetirarRecursoIntegrationTest {
         salaRepository.save(salaIngenieria);
 
         mockMvc.perform(delete("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -130,7 +141,7 @@ class RetirarRecursoIntegrationTest {
     @Test
     void debeImpedirRetiroSinAutenticacionAdecuada() throws Exception {
         mockMvc.perform(delete("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "DOCENTE")
                         .contentType(MediaType.APPLICATION_JSON)

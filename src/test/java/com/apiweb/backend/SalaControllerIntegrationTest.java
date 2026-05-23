@@ -21,7 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.apiweb.backend.Model.EstadoReserva;
 import com.apiweb.backend.Model.ReservaModel;
 import com.apiweb.backend.Model.SalaModel;
+import com.apiweb.backend.Model.UsuarioModel;
 import com.apiweb.backend.Repository.AuditoriaRepository;
+import com.apiweb.backend.Repository.IUsuarioRepository;
 import com.apiweb.backend.Repository.RecursoSalaRepository;
 import com.apiweb.backend.Repository.RecursoTecnologicoRepository;
 import com.apiweb.backend.Repository.ReservaRepository;
@@ -49,9 +51,13 @@ class SalaControllerIntegrationTest {
     @Autowired
     private AuditoriaRepository auditoriaRepository;
 
+    @Autowired
+    private IUsuarioRepository usuarioRepository;
+
     private SalaModel salaIngenieria;
     private SalaModel salaDeshabilitada;
     private SalaModel salaOtraFacultad;
+    private String secretariaId;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +66,11 @@ class SalaControllerIntegrationTest {
         reservaRepository.deleteAll();
         auditoriaRepository.deleteAll();
         salaRepository.deleteAll();
+        usuarioRepository.deleteAll();
+
+        UsuarioModel secretaria = usuarioRepository.save(
+                new UsuarioModel(null, "Secretaria Ingenieria", "secretaria.salas@uao.edu.co", "ClaveSegura1!", "SECRETARIA", 10));
+        secretariaId = String.valueOf(secretaria.getIdUsuario());
 
         salaIngenieria = salaRepository.save(new SalaModel(null, "Sala Magna", "Bloque A", 20, 10, true));
         salaRepository.save(new SalaModel(null, "Sala Norte", "Bloque B", 12, 10, true));
@@ -70,7 +81,8 @@ class SalaControllerIntegrationTest {
     @Test
     void debeCrearSalaConPayloadDelFrontend() throws Exception {
         mockMvc.perform(post("/api/salas")
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
+                        .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -90,7 +102,7 @@ class SalaControllerIntegrationTest {
     @Test
     void debeEditarSalaCorrectamente() throws Exception {
         mockMvc.perform(put("/api/salas/{idSala}", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -109,7 +121,7 @@ class SalaControllerIntegrationTest {
     @Test
     void debeRechazarNombreDuplicadoEnLaMismaFacultad() throws Exception {
         mockMvc.perform(put("/api/salas/{idSala}", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -136,7 +148,7 @@ class SalaControllerIntegrationTest {
                 EstadoReserva.CONFIRMADA));
 
         mockMvc.perform(patch("/api/salas/{idSala}/estado", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -153,7 +165,7 @@ class SalaControllerIntegrationTest {
     @Test
     void debeAgregarRecursoYActualizarCantidadSiYaExiste() throws Exception {
         mockMvc.perform(post("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -168,7 +180,7 @@ class SalaControllerIntegrationTest {
                 .andExpect(jsonPath("$.cantidad").value(2));
 
         mockMvc.perform(post("/api/salas/{idSala}/recursos", salaIngenieria.getIdSala())
-                        .header("X-Usuario-Id", "1")
+                        .header("X-Usuario-Id", secretariaId)
                         .header("X-Facultad-Id", 10)
                         .header("X-Rol", "SECRETARIA")
                         .contentType(MediaType.APPLICATION_JSON)

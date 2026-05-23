@@ -6,6 +6,7 @@ import java.time.LocalTime;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,7 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.apiweb.backend.Model.EstadoReserva;
 import com.apiweb.backend.Model.ReservaModel;
@@ -47,12 +53,17 @@ class SecurityIntegrationTest {
     @Autowired
     private Environment environment;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     private UsuarioModel secretaria;
     private UsuarioModel docente;
     private SalaModel salaIngenieria;
+    private String tokenSecretaria;
+    private String tokenDocente;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         reservaRepository.deleteAll();
         salaRepository.deleteAll();
         usuarioRepository.deleteAll();
@@ -74,6 +85,8 @@ class SecurityIntegrationTest {
                 10));
 
         salaIngenieria = salaRepository.save(new SalaModel(null, "Sala Magna", "Bloque A", 20, 10, true));
+        tokenSecretaria = login(secretaria.getCorreo(), "ClaveSegura1!");
+        tokenDocente = login(docente.getCorreo(), "ClaveSegura1!");
     }
 
     @Test
@@ -85,41 +98,37 @@ class SecurityIntegrationTest {
 
     @Test
     void debeResponderPreflightDesdeVite() throws Exception {
-        mockMvc.perform(options("/api/usuarios/login")
+                mockMvc.perform(options("/api/usuarios/login")
                         .header("Origin", "http://localhost:5173")
                         .header("Access-Control-Request-Method", "POST")
                         .header("Access-Control-Request-Headers", "content-type"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
-                .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
+                .andExpect(header().doesNotExist("Access-Control-Allow-Credentials"));
     }
 
     @Test
     void debeResponderJsonCuandoApiNoEstaAutenticada() throws Exception {
-        mockMvc.perform(get("/api/salas")
-                        .header("X-Facultad-Id", 10)
-                        .header("X-Rol", "SECRETARIA"))
+        mockMvc.perform(get("/api/salas"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Autenticacion requerida"));
     }
 
     @Test
-    void debePermitirAutenticarConEncabezadoUsuarioSinSesion() throws Exception {
+    void debePermitirAutenticarConBearerToken() throws Exception {
         mockMvc.perform(get("/api/salas")
-                        .header("X-Usuario-Id", secretaria.getIdUsuario())
-                        .header("X-Facultad-Id", 10)
-                        .header("X-Rol", "SECRETARIA"))
+                        .header("Authorization", "Bearer " + tokenSecretaria))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].nombre").value("Sala Magna"));
     }
 
     @Test
-    void debeDesactivarCookieSecurePorDefectoEnDesarrollo() {
-        assertFalse(Boolean.parseBoolean(environment.getProperty("server.servlet.session.cookie.secure")));
+    void debeMantenerConfiguracionSinCookieSeguraForzadaEnDesarrollo() {
+        assertFalse(Boolean.parseBoolean(environment.getProperty("server.servlet.session.cookie.secure", "false")));
     }
 
     @Test
-    void docenteDebePoderVerSusReservasSinSesionFormulario() throws Exception {
+    void docenteDebePoderVerSusReservasConJwt() throws Exception {
         reservaRepository.save(new ReservaModel(
                 null,
                 salaIngenieria,
@@ -130,14 +139,14 @@ class SecurityIntegrationTest {
                 EstadoReserva.CONFIRMADA));
 
         mockMvc.perform(get("/api/reservas/mis-reservas")
-                        .header("X-Usuario-Id", docente.getIdUsuario()))
+                        .header("Authorization", "Bearer " + tokenDocente))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].idSala").value(salaIngenieria.getIdSala()))
                 .andExpect(jsonPath("$[0].estado").value("ACTIVA"));
     }
 
     @Test
-    void docenteDebePoderCancelarSuReservaSinSesionFormulario() throws Exception {
+    void docenteDebePoderCancelarSuReservaConJwt() throws Exception {
         ReservaModel reserva = reservaRepository.save(new ReservaModel(
                 null,
                 salaIngenieria,
@@ -148,10 +157,25 @@ class SecurityIntegrationTest {
                 EstadoReserva.CONFIRMADA));
 
         mockMvc.perform(delete("/api/reservas/{idReserva}", reserva.getIdReserva())
-                        .header("X-Usuario-Id", docente.getIdUsuario())
-                        .header("X-Rol", "DOCENTE"))
+                        .header("Authorization", "Bearer " + tokenDocente))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("CANCELADA"))
                 .andExpect(jsonPath("$.canceladoPor").value("USUARIO"));
+    }
+
+    private String login(String correo, String password) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/usuarios/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "correo": "%s",
+                                  "password": "%s"
+                                }
+                                """.formatted(correo, password)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
+        return json.get("token").asText();
     }
 }

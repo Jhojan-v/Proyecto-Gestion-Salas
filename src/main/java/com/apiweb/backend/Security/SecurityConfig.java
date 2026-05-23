@@ -11,14 +11,11 @@ import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -27,14 +24,6 @@ import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
-import org.springframework.security.web.authentication.session.ConcurrentSessionControlAuthenticationStrategy;
-import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
-import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
-import org.springframework.security.web.authentication.session.SessionFixationProtectionStrategy;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -48,38 +37,6 @@ import jakarta.servlet.http.HttpServletResponse;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-
-    @Bean
-    SecurityContextRepository securityContextRepository() {
-        HttpSessionSecurityContextRepository repository = new HttpSessionSecurityContextRepository();
-        repository.setDisableUrlRewriting(true);
-        return repository;
-    }
-
-    @Bean
-    SessionRegistry sessionRegistry() {
-        return new SessionRegistryImpl();
-    }
-
-    @Bean
-    SessionAuthenticationStrategy sessionAuthenticationStrategy(SessionRegistry sessionRegistry) {
-        ConcurrentSessionControlAuthenticationStrategy concurrentSessions =
-                new ConcurrentSessionControlAuthenticationStrategy(sessionRegistry);
-        concurrentSessions.setMaximumSessions(1);
-        concurrentSessions.setExceptionIfMaximumExceeded(false);
-
-        SessionFixationProtectionStrategy sessionFixation = new SessionFixationProtectionStrategy();
-        RegisterSessionAuthenticationStrategy registerSession =
-                new RegisterSessionAuthenticationStrategy(sessionRegistry);
-
-        return new CompositeSessionAuthenticationStrategy(
-                List.of(concurrentSessions, sessionFixation, registerSession));
-    }
-
-    @Bean
-    HttpSessionEventPublisher httpSessionEventPublisher() {
-        return new HttpSessionEventPublisher();
-    }
 
     @Bean
     UserDetailsService userDetailsService(IUsuarioRepository usuarioRepository) {
@@ -111,12 +68,8 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of(
                 "Authorization",
                 "Content-Type",
-                "X-Requested-With",
-                "X-Usuario-Id",
-                "X-Facultad-Id",
-                "X-Rol"));
-        configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(List.of("Set-Cookie"));
+                "X-Requested-With"));
+        configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -133,15 +86,11 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            SecurityContextRepository securityContextRepository,
-            SessionRegistry sessionRegistry,
-            HeaderAuthenticationFilter headerAuthenticationFilter) throws Exception {
+            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
 
         http
-            .cors(Customizer.withDefaults())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
-            .securityContext(securityContext -> securityContext
-                .securityContextRepository(securityContextRepository))
             .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, exception) ->
                     escribirErrorJson(response, HttpStatus.UNAUTHORIZED, "Autenticacion requerida"))
@@ -154,13 +103,9 @@ public class SecurityConfig {
                 .authenticated())
             .formLogin(form -> form.disable())
             .httpBasic(httpBasic -> httpBasic.disable())
-            .addFilterBefore(headerAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                .sessionFixation(sessionFixation -> sessionFixation.migrateSession())
-                .maximumSessions(1)
-                    .maxSessionsPreventsLogin(false)
-                    .sessionRegistry(sessionRegistry));
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         return http.build();
     }

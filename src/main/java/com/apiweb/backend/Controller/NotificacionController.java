@@ -31,7 +31,7 @@ public class NotificacionController {
 
     @GetMapping("/mias")
     public ResponseEntity<NotificacionesResumenResponse> listarMias(
-            @RequestHeader("X-Usuario-Id") String usuarioId) {
+            @RequestHeader(value = "X-Usuario-Id", required = false) String usuarioId) {
         Integer idUsuario = usuarioContext.resolverIdUsuario(usuarioId);
         return ResponseEntity.ok(notificacionService.listarParaUsuario(idUsuario));
     }
@@ -39,14 +39,14 @@ public class NotificacionController {
     @PatchMapping("/{idNotificacion}/leer")
     public ResponseEntity<NotificacionResponse> marcarLeida(
             @PathVariable Integer idNotificacion,
-            @RequestHeader("X-Usuario-Id") String usuarioId) {
+            @RequestHeader(value = "X-Usuario-Id", required = false) String usuarioId) {
         Integer idUsuario = usuarioContext.resolverIdUsuario(usuarioId);
         return ResponseEntity.ok(notificacionService.marcarComoLeida(idNotificacion, idUsuario));
     }
 
     @PatchMapping("/leer-todas")
     public ResponseEntity<Map<String, Object>> marcarTodasLeidas(
-            @RequestHeader("X-Usuario-Id") String usuarioId) {
+            @RequestHeader(value = "X-Usuario-Id", required = false) String usuarioId) {
         Integer idUsuario = usuarioContext.resolverIdUsuario(usuarioId);
         long actualizadas = notificacionService.marcarTodasComoLeidas(idUsuario);
         return ResponseEntity.ok(Map.of("actualizadas", actualizadas));
